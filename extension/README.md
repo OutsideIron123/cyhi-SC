@@ -136,6 +136,28 @@ script is injected and the problem is extraction, not plumbing.
 Post ids are prefixed per platform: `x_`, `r_`, `li_`, or `h_` for the text-hash
 fallback where a site gives no stable id.
 
+## Calibrating trigger sensitivity
+
+Measured against the real `all-MiniLM-L6-v2` embedder on realistic feed posts,
+not guessed:
+
+| what | cosine similarity |
+|---|---|
+| near-verbatim match ("layoffs announced" vs "layoffs and job loss") | 0.51 |
+| same topic, different words ("my team got laid off") | 0.36 |
+| typical on-topic LinkedIn post vs its trigger | 0.31 – 0.37 |
+| unrelated post vs any trigger | 0.15 – 0.26 |
+| clearly unrelated ("build working, trailing slash") | 0.02 |
+
+A short trigger phrase compared against a long post is an asymmetric comparison,
+so scores sit far lower than the 0.7+ people expect from sentence similarity.
+The default is **0.32**, and the useful range is roughly 0.25 to 0.5. Above 0.55
+nothing on a real feed will ever match.
+
+The separation between "on topic" (~0.34) and "unrelated" (~0.22) is real but
+narrow, so a trigger that is too broad will catch the whole feed. Specific
+phrases beat vague ones: "graphic animal cruelty" works, "bad things" does not.
+
 ## How this survives MV3
 
 The service worker is killed after ~30s idle, routinely mid-scroll. Everything

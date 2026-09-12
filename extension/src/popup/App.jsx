@@ -164,8 +164,8 @@ export default function App() {
               <div className="row">
                 <input
                   type="range"
-                  min="0.2"
-                  max="0.9"
+                  min="0.15"
+                  max="0.7"
                   step="0.01"
                   value={t.threshold}
                   onChange={(e) => patchTrigger(t.id, { threshold: Number(e.target.value) })}
@@ -269,8 +269,8 @@ function modelName(status) {
 }
 
 function sensitivityLabel(v) {
-  if (v <= 0.35) return 'Catch a lot';
-  if (v <= 0.5) return 'Balanced';
-  if (v <= 0.68) return 'Close matches';
-  return 'Only exact';
+  if (v <= 0.25) return 'Catch a lot';
+  if (v <= 0.38) return 'Balanced';
+  if (v <= 0.52) return 'Close matches';
+  return 'Near-exact only';
 }

@@ -12,7 +12,7 @@ export const DEFAULT_SETTINGS = {
   nsfw: { enabled: true, threshold: 0.6, action: ACTION.BLUR },
 
   triggers: [],
-  defaultTriggerThreshold: 0.55,
+  defaultTriggerThreshold: 0.32,
 
   scanImages: true,
   blurAmount: 14,
