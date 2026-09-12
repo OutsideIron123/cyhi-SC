@@ -1,21 +1,3 @@
-// ===========================================================================
-//  STAND-IN ONLY. NOT FOR THE DEMO.
-//
-//  Track 3's hard constraint is that the majority of features run on models we
-//  trained ourselves. This file contains no model — it returns keyword-driven
-//  fake scores so the extension can be built and tested before the real Flask
-//  API exists. Delete it, or at minimum never point the demo at it.
-//
-//  Its only real job is to pin down the wire format so the backend and the
-//  extension cannot drift apart:
-//     GET  /health   -> { status, models }
-//     POST /classify -> { results: [{ id, toxicity, nsfw, triggers[] }] }
-//
-//  It also serves the bridge test harness at / so one command gives you both a
-//  fake API and a fake feed to point the extension at.
-//
-//  Run:  npm run mock-backend      (listens on http://127.0.0.1:5000)
-// ===========================================================================
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +9,6 @@ const NASTY = ['idiot', 'stupid', 'hate', 'trash', 'kill', 'worthless', 'scum', 
 const SPICY = ['nsfw', 'nude', 'gore', 'blood', 'graphic'];
 
 const server = createServer(async (req, res) => {
-  // The real Flask app needs flask-cors for the same reason.
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
   if (req.method === 'OPTIONS') return res.writeHead(204).end();
@@ -47,7 +28,6 @@ const server = createServer(async (req, res) => {
     const items = body?.items || [];
     const triggers = body?.config?.triggers || [];
 
-    // Pretend inference costs something, so batching behaviour is observable.
     await new Promise((r) => setTimeout(r, 60 + items.length * 8));
 
     const results = items.map((item) => {
@@ -59,7 +39,6 @@ const server = createServer(async (req, res) => {
         triggers: triggers.map((t) => ({
           id: t.id,
           phrase: t.phrase,
-          // Crude word overlap standing in for cosine similarity.
           score: overlap(text, t.phrase),
         })),
       };

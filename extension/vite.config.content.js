@@ -1,10 +1,6 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'node:path';
 
-// Build 2 of 2: the content script.
-// Content scripts are injected as classic scripts — no import/export at runtime —
-// so this is a separate IIFE lib build that appends into the same dist/ folder.
-// emptyOutDir:false is load-bearing: it must not wipe build 1's output.
 export default defineConfig({
   build: {
     outDir: 'dist',

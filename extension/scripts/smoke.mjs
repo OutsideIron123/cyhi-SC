@@ -1,6 +1,3 @@
-// Node smoke test for the parts that have no chrome.* dependency:
-// the policy engine and the dashboard aggregation.
-//   node scripts/smoke.mjs
 import assert from 'node:assert/strict';
 import { decide } from '../src/background/decide.js';
 import { summarize } from '../src/lib/events.js';

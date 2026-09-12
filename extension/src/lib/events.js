@@ -1,22 +1,7 @@
 import { ACTION, REASON } from './protocol.js';
 
 const KEY = 'events';
-/** Ring buffer cap. ~4k events is well under the 10MB local-storage quota and covers a full demo session. */
 export const MAX_EVENTS = 4000;
-
-/**
- * MoodEvent — one scored post. Keys are short because we write thousands of these.
- * @typedef {Object} MoodEvent
- * @property {number}   t    epoch ms
- * @property {string}   p    platform
- * @property {string}   a    action taken
- * @property {string[]} r    reasons
- * @property {number}   tox  toxicity 0..1
- * @property {number}   nsf  nsfw 0..1
- * @property {?string}  tg   matched trigger phrase
- * @property {number}   sim  trigger similarity 0..1
- * @property {boolean}  [rv] user revealed it anyway
- */
 
 export function eventFromVerdict(verdict, platform) {
   return {
@@ -40,7 +25,6 @@ export async function getEvents(since = 0) {
   return since ? all.filter((e) => e.t >= since) : all;
 }
 
-/** Append and trim. One storage write per batch, not per post. */
 export async function appendEvents(events) {
   if (!events?.length) return;
   const bag = await chrome.storage.local.get(KEY);
@@ -54,12 +38,6 @@ export async function clearEvents() {
   await chrome.storage.local.set({ [KEY]: [] });
 }
 
-/**
- * The reader lifted a blur. That is the single most interesting signal the
- * dashboard has — it is the difference between "we hid 40 posts" and "we hid 40
- * posts and you only wanted 3 of them back" — so it is worth the read-modify-write.
- * Scans from the end because the post was almost certainly just scored.
- */
 export async function markRevealed(id) {
   const bag = await chrome.storage.local.get(KEY);
   const all = Array.isArray(bag[KEY]) ? bag[KEY] : [];
@@ -74,12 +52,6 @@ export async function markRevealed(id) {
   return false;
 }
 
-/**
- * Everything the Mood Dashboard renders, computed in one pass.
- * Pure function over an event array — the dashboard can feed it mock data
- * (see mock.js) and get an identically shaped result. That is deliberate: the
- * UI work does not block on the pipeline being live.
- */
 export function summarize(events, { bucketMinutes = 5 } = {}) {
   const total = events.length;
   const empty = {
@@ -121,7 +93,6 @@ export function summarize(events, { bucketMinutes = 5 } = {}) {
   const first = events[0].t;
   const last = events[total - 1].t;
 
-  // Timeline: fixed-width buckets between the first and last event.
   const bucketMs = bucketMinutes * 60 * 1000;
   const start = Math.floor(first / bucketMs) * bucketMs;
   const buckets = new Map();
@@ -151,8 +122,6 @@ export function summarize(events, { bucketMinutes = 5 } = {}) {
     .slice(0, 6);
 
   const avgToxicity = round2(toxSum / total);
-  // Calm score: what fraction of the feed reached you clean, damped by how nasty
-  // the average post was. Presentational, not a model output — say so on stage.
   const calmScore = Math.round(
     Math.max(0, Math.min(100, (1 - filtered / total) * 100 * (1 - avgToxicity * 0.5)))
   );

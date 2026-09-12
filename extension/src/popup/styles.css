@@ -1,6 +1,3 @@
-/* Structural only. UI/UX lead: this is yours to replace wholesale — nothing in
-   App.jsx depends on these class names except for layout. */
-
 :root {
   color-scheme: light dark;
   --fg: canvastext;

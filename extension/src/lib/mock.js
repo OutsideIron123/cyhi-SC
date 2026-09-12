@@ -1,10 +1,5 @@
 import { ACTION, REASON, PLATFORM } from './protocol.js';
 
-/**
- * Deterministic mock event stream, shaped exactly like the real one.
- * The dashboard renders this whenever real events are empty, so the UI can be
- * designed and demoed before the backend is up. Seeded so screenshots are stable.
- */
 export function mockEvents({ count = 240, minutes = 60, seed = 7 } = {}) {
   const rand = mulberry32(seed);
   const now = Date.now();
@@ -13,7 +8,6 @@ export function mockEvents({ count = 240, minutes = 60, seed = 7 } = {}) {
   const out = [];
 
   for (let i = 0; i < count; i++) {
-    // Scroll sessions are bursty: doomscrolling gets worse the longer it runs.
     const progress = i / count;
     const t = now - span + Math.floor(span * progress) + Math.floor(rand() * 4000);
     const heat = 0.25 + progress * 0.45;
@@ -44,7 +38,6 @@ export function mockEvents({ count = 240, minutes = 60, seed = 7 } = {}) {
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const round2 = (n) => Math.round(n * 100) / 100;
-// Cheap skewed draw: mean tracks `center`, most mass low, occasional spike.
 const betaish = (rand, center) => center * (rand() + rand()) * 0.9 + rand() * rand() * 0.4;
 
 function mulberry32(a) {

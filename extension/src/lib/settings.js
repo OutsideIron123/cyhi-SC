@@ -6,15 +6,12 @@ export const DEFAULT_SETTINGS = {
   version: 1,
   enabled: true,
 
-  // Role 1 gives you this. Swap it for the ngrok URL at demo time — no rebuild needed.
   backendUrl: 'http://127.0.0.1:5000',
 
   toxicity: { enabled: true, threshold: 0.7, action: ACTION.BLUR },
   nsfw: { enabled: true, threshold: 0.6, action: ACTION.BLUR },
 
-  /** @type {{id: string, phrase: string, threshold: number, action: string, enabled: boolean}[]} */
   triggers: [],
-  /** Sensitivity a newly added trigger starts at. */
   defaultTriggerThreshold: 0.55,
 
   blurAmount: 14,
@@ -24,7 +21,6 @@ export const DEFAULT_SETTINGS = {
   sites: { x: true, reddit: true },
 };
 
-/** Crypto-free id generator — content scripts and SW both have crypto.randomUUID, but this reads better in the log. */
 export function newTriggerId() {
   return 't_' + Math.random().toString(36).slice(2, 9);
 }
@@ -39,11 +35,6 @@ export function makeTrigger(phrase, threshold = DEFAULT_SETTINGS.defaultTriggerT
   };
 }
 
-/**
- * Merge stored settings over the defaults, one level deep into the known objects.
- * A shallow spread would drop new fields we add mid-hackathon from existing installs,
- * which is exactly the kind of thing that eats an hour at 3am.
- */
 export function normalize(stored) {
   const s = { ...DEFAULT_SETTINGS, ...(stored || {}) };
   s.toxicity = { ...DEFAULT_SETTINGS.toxicity, ...(stored?.toxicity || {}) };
@@ -75,7 +66,6 @@ export async function getSettings() {
   return normalize(bag[KEY]);
 }
 
-/** Shallow-patches and persists. Returns the normalized result. */
 export async function saveSettings(patch) {
   const current = await getSettings();
   const next = normalize({ ...current, ...patch });
@@ -88,11 +78,6 @@ export async function resetSettings() {
   return normalize(DEFAULT_SETTINGS);
 }
 
-/**
- * Subscribe to settings changes. Works in the popup, the dashboard, the content
- * script and the SW — chrome.storage.onChanged fires in every context.
- * Returns an unsubscribe function.
- */
 export function onSettingsChanged(cb) {
   const handler = (changes, area) => {
     if (area !== 'local' || !changes[KEY]) return;
@@ -102,7 +87,6 @@ export function onSettingsChanged(cb) {
   return () => chrome.storage.onChanged.removeListener(handler);
 }
 
-/** The slice of settings the backend needs in order to score a batch. */
 export function toBackendConfig(s) {
   return {
     toxicity_threshold: s.toxicity.threshold,

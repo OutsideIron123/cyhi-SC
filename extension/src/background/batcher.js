@@ -4,26 +4,12 @@ import { classify } from './backend.js';
 import { decide } from './decide.js';
 import * as cache from './cache.js';
 
-/** Posts per HTTP request. Role 1 tunes this against their batching on the Flask side. */
 const MAX_BATCH = 16;
-/** How long we hold the first item waiting for its neighbours. */
 const WINDOW_MS = 120;
 
-/** @type {Map<string, {item: any, settle: ((v:any)=>void)[]}>} */
 const queue = new Map();
 let timer = null;
 
-/**
- * Classify a set of posts. Cache hits return immediately; misses join the next
- * outbound batch.
- *
- * The batching window is short on purpose. Chrome resets the service worker's
- * idle timer on every message and keeps it alive while an onMessage response is
- * outstanding, so 120ms is free — but a long window would risk the 30s response
- * ceiling if the backend also stalls, and it would make the blur visibly late.
- *
- * @returns {Promise<{results: Object<string, any>, degraded: boolean}>}
- */
 export async function classifyItems(items, settings) {
   const unique = dedupe(items);
   const { hits, misses } = await cache.partition(unique.map((i) => i.id));
@@ -60,7 +46,6 @@ function enqueue(item, settings) {
   return new Promise((resolve) => {
     const existing = queue.get(item.id);
     if (existing) {
-      // Two tabs asked for the same post inside one window — one request, two answers.
       existing.settle.push(resolve);
     } else {
       queue.set(item.id, { item, settle: [resolve] });
@@ -84,8 +69,6 @@ async function flush(settings) {
   const entries = [...queue.values()];
   queue.clear();
 
-  // Split oversized bursts (a fast scroll can queue 60 posts at once) so no single
-  // request blocks the whole backlog behind one slow inference pass.
   for (let i = 0; i < entries.length; i += MAX_BATCH) {
     void send(entries.slice(i, i + MAX_BATCH), settings);
   }
@@ -105,8 +88,6 @@ async function send(entries, settings) {
     const byId = new Map(rows.map((r) => [r.id, r]));
     verdicts = entries.map(({ item }) => {
       const row = byId.get(item.id);
-      // A post the backend silently dropped is allowed, not blocked. Never let a
-      // model bug turn into a blank feed on stage.
       return row ? decide(row, settings) : allowVerdict(item.id, true);
     });
     await cache.put(verdicts);
@@ -116,9 +97,6 @@ async function send(entries, settings) {
       );
     }
   } catch {
-    // Fail open. A dead backend means an unfiltered feed, never a broken page.
-    // These verdicts are deliberately NOT cached, so the posts get a real score
-    // as soon as the backend comes back.
     verdicts = entries.map(({ item }) => allowVerdict(item.id, true));
   }
 

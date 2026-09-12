@@ -4,19 +4,6 @@ import { rpc, ContextInvalidated } from '../lib/rpc.js';
 import { MSG } from '../lib/protocol.js';
 import { injectStyles, paint, unpaint } from './overlay.js';
 
-// ---------------------------------------------------------------------------
-// OWNERSHIP NOTE
-//
-// The DOM Extraction Specialist owns this file. Everything below the ADAPTERS
-// block is the bridge — batching, caching, settings reactivity, veil painting —
-// and should not need to change. ADAPTERS is the seam: replace the selectors and
-// the extract() bodies with the real X / Reddit mappings and the rest keeps working.
-//
-// The contract in both directions:
-//   send    { id, text, images[], platform }   (see lib/protocol.js PostItem)
-//   receive { id, action, reasons[], toxicity, nsfw, trigger, similarity }
-// ---------------------------------------------------------------------------
-
 const ADAPTERS = {
   [PLATFORM.X]: {
     hosts: ['x.com', 'twitter.com'],
@@ -54,8 +41,6 @@ const ADAPTERS = {
 };
 
 function fallbackId(el, text) {
-  // Some posts have no stable id in the DOM. Hashing the text keeps the cache
-  // working across re-renders, which is the only thing the id is actually for.
   let h = 2166136261;
   const s = text || el.textContent || '';
   for (let i = 0; i < Math.min(s.length, 300); i++) {
@@ -65,18 +50,10 @@ function fallbackId(el, text) {
   return `h_${(h >>> 0).toString(36)}`;
 }
 
-// ---------------------------------------------------------------------------
-// Bridge
-// ---------------------------------------------------------------------------
-
 let platform = detectPlatform();
 if (platform) {
   void start();
 } else {
-  // Nothing matched at document_start. That is expected for the dev harness,
-  // which declares its shape from an inline script that has not run yet — and
-  // it is cheap insurance for any page that decides what it is late. Real sites
-  // match on hostname and take the branch above.
   document.addEventListener(
     'DOMContentLoaded',
     () => {
@@ -88,10 +65,6 @@ if (platform) {
 }
 
 function detectPlatform() {
-  // DEV ONLY. The test harness declares which DOM shape it is emitting so the
-  // bridge can be exercised without a logged-in timeline. Real sites never set
-  // this attribute. Drop this branch and the localhost match pattern in
-  // manifest.json before submission if you want the permission list minimal.
   const declared = document.documentElement?.dataset?.cfPlatform;
   if (declared && ADAPTERS[declared]) return declared;
 
@@ -104,9 +77,7 @@ function detectPlatform() {
   return null;
 }
 
-/** Post ids already sent this page-load. Survives scroll-up; dies with the tab. */
 const seen = new Set();
-/** id -> element, so a settings change can repaint without another round trip. */
 const painted = new Map();
 let settings = null;
 let dead = false;
@@ -114,8 +85,6 @@ let pending = [];
 let flushTimer = null;
 
 async function start() {
-  // One line, on purpose: "is the content script even alive here" is the first
-  // question every time something does not blur, and it is otherwise invisible.
   console.info('[READIT] content script active on', platform, location.host);
   injectStyles();
   settings = await getSettings();
@@ -123,8 +92,6 @@ async function start() {
   onSettingsChanged((next) => {
     const before = settings;
     settings = next;
-    // Thresholds moved: the SW has already dropped its verdict cache, so the
-    // honest thing is to clear ours and re-score what is on screen.
     if (policyChanged(before, next)) {
       seen.clear();
       for (const [, el] of painted) unpaint(el);
@@ -149,7 +116,6 @@ async function start() {
     observer.observe(document.body, { childList: true, subtree: true });
     scan(document);
   };
-  // run_at is document_start, so body may not exist yet.
   if (document.body) attach();
   else document.addEventListener('DOMContentLoaded', attach, { once: true });
 }
@@ -179,8 +145,6 @@ function scan(root) {
     if (!item?.id) continue;
     if (!item.text && !item.images?.length) continue;
 
-    // Re-render of a post we already decided on: repaint from the element map
-    // rather than asking again.
     if (seen.has(item.id)) {
       const known = painted.get(item.id);
       if (known && known !== el && known.verdict) paint(el, known.verdict, settings);
@@ -194,9 +158,6 @@ function scan(root) {
 
 function schedule() {
   if (flushTimer) return;
-  // Coalesce a burst of MutationObserver callbacks into one message. The SW
-  // batches again on its side; this pass just keeps the message count sane
-  // during a fast scroll.
   flushTimer = setTimeout(flush, 80);
 }
 
@@ -222,13 +183,9 @@ async function flush() {
     }
   } catch (err) {
     if (err instanceof ContextInvalidated) {
-      // The extension was reloaded under us. Stop cleanly instead of throwing
-      // on every scroll event for the rest of the page's life.
       dead = true;
       return;
     }
-    // Anything else: the posts stay visible. Let them be re-tried on the next
-    // re-render rather than leaving the reader with a frozen feed.
     for (const b of batch) seen.delete(b.item.id);
   }
 }

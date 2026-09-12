@@ -10,11 +10,6 @@ const LABELS = {
   [REASON.TRIGGER]: 'a topic you muted',
 };
 
-/**
- * Everything is attribute-driven and !important. Single-page apps rewrite
- * className and style on re-render, but they rarely touch unknown data-*
- * attributes, so `[data-cf-action]` is the most durable hook available.
- */
 export function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
@@ -78,7 +73,6 @@ export function paint(el, verdict, settings) {
   el.setAttribute('data-cf-action', verdict.action);
   el.style.setProperty('--cf-blur', `${settings?.blurAmount ?? 14}px`);
 
-  // Already veiled (React re-rendered around our node) — nothing to add.
   if (el.querySelector(`:scope > .${VEIL_CLASS}`)) return;
 
   const veil = document.createElement('div');
@@ -104,8 +98,6 @@ export function paint(el, verdict, settings) {
       ev.preventDefault();
       ev.stopPropagation();
       unpaint(el);
-      // Fire-and-forget: the reveal is the reader's decision, and the dashboard
-      // caring about it must never make the click feel slow.
       void rpc(MSG.LOG_REVEAL, { id: verdict.id }).catch(() => {});
     },
     true

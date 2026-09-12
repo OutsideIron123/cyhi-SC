@@ -3,18 +3,7 @@ import { MSG, ACTION } from '../lib/protocol.js';
 import { makeTrigger, normalize, DEFAULT_SETTINGS } from '../lib/settings.js';
 import { rpc } from '../lib/rpc.js';
 
-// True inside the extension, false under `npm run preview`. In preview the popup
-// runs on local state only so it can be designed in a normal browser tab —
-// every write is a no-op, nothing is persisted.
 const LIVE = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
-
-// ---------------------------------------------------------------------------
-// UI/UX lead owns the look of this file. The state plumbing below — the debounced
-// writer, the optimistic updates, the status poll — is the part that has to stay:
-// every write goes through chrome.storage.local, which is what the content script
-// and the service worker both read. Restyle freely; keep `update()` as the only
-// way state changes.
-// ---------------------------------------------------------------------------
 
 export default function App() {
   const [settings, setSettings] = useState(null);
@@ -33,11 +22,6 @@ export default function App() {
     rpc(MSG.GET_STATUS).then(setStatus).catch(console.error);
   }, []);
 
-  /**
-   * Optimistic local update + debounced persist. Sliders fire dozens of times a
-   * second; without the debounce every drag would be a storage write, and every
-   * storage write invalidates the verdict cache in the service worker.
-   */
   const update = useCallback((patch) => {
     setSettings((prev) => {
       const next = { ...prev, ...patch };
@@ -54,7 +38,6 @@ export default function App() {
     if (!LIVE) return;
     setTesting(true);
     try {
-      // Persist first so the worker tests the URL actually in the box.
       await rpc(MSG.SAVE_SETTINGS, { patch: settings });
       setStatus(await rpc(MSG.PING_BACKEND, { backendUrl: settings.backendUrl }));
     } catch (err) {
@@ -269,8 +252,6 @@ function Threshold({ label, hint, value, onChange }) {
   );
 }
 
-// Users do not think in cosine similarity. A low threshold catches more, so the
-// scale reads backwards from the number.
 function sensitivityLabel(v) {
   if (v <= 0.35) return 'Catch a lot';
   if (v <= 0.5) return 'Balanced';

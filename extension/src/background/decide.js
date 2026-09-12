@@ -1,21 +1,7 @@
 import { ACTION, REASON } from '../lib/protocol.js';
 
-/** Severity order — when several rules fire, the strictest one wins. */
 const RANK = { [ACTION.ALLOW]: 0, [ACTION.BLUR]: 1, [ACTION.COLLAPSE]: 2, [ACTION.HIDE]: 3 };
 
-/**
- * Turn raw model scores into an action.
- *
- * This is the one piece of policy in the whole system and it lives on the client
- * on purpose: the backend never sees a threshold it has to agree with, so moving
- * a slider in the popup changes behaviour on the next scroll with no redeploy and
- * no model reload. It is also a pure function, which makes it the only part of
- * the pipeline you can reason about at 4am.
- *
- * @param {{id: string, toxicity?: number, nsfw?: number, triggers?: {id: string, phrase: string, score: number}[]}} row
- * @param {import('../lib/settings.js').DEFAULT_SETTINGS} settings
- * @returns {import('../lib/protocol.js').Verdict}
- */
 export function decide(row, settings) {
   const toxicity = clamp01(row?.toxicity);
   const nsfw = clamp01(row?.nsfw);
@@ -32,8 +18,6 @@ export function decide(row, settings) {
     action = strictest(action, settings.nsfw.action);
   }
 
-  // Semantic triggers: the backend scores the post against every enabled trigger
-  // vector; we keep the strongest one that clears its own per-trigger threshold.
   let trigger = null;
   let similarity = 0;
   const byId = new Map(settings.triggers.map((t) => [t.id, t]));

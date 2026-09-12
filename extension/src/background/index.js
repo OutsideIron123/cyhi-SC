@@ -5,25 +5,12 @@ import { classifyItems } from './batcher.js';
 import * as backend from './backend.js';
 import * as cache from './cache.js';
 
-// ---------------------------------------------------------------------------
-// MV3 service worker.
-//
-// The one rule that governs this file: THIS WORKER WILL BE KILLED, usually
-// after ~30s idle, and often mid-scroll. So it holds no state that matters.
-// Settings live in chrome.storage.local, the verdict cache mirrors to
-// chrome.storage.session, the event log is in chrome.storage.local. Everything
-// in memory here is a cache of something durable, and every listener is
-// registered synchronously at the top level so the worker can be revived by an
-// incoming event. Do not wrap addListener calls in an async function.
-// ---------------------------------------------------------------------------
-
 const HEALTH_ALARM = 'cf:health';
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install') {
     await chrome.storage.local.set({ settings: DEFAULT_SETTINGS, events: [] });
   } else {
-    // An update can add fields; normalize() backfills them on first read.
     await saveSettings({});
   }
   chrome.alarms.create(HEALTH_ALARM, { periodInMinutes: 1 });
@@ -35,8 +22,6 @@ chrome.runtime.onStartup.addListener(() => {
   void refreshHealth();
 });
 
-// Alarms are the only reliable way to get periodic work out of an MV3 worker;
-// setInterval dies with the worker. One minute is the floor Chrome allows.
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === HEALTH_ALARM) void refreshHealth();
 });
@@ -47,8 +32,6 @@ async function refreshHealth() {
   await backend.health(settings.backendUrl);
 }
 
-// Any change to a threshold, a trigger, or the backend invalidates cached
-// verdicts — they encode a decision, not just a score.
 let lastPolicy = null;
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.settings) return;
@@ -69,15 +52,6 @@ function policySignature(s) {
   ]);
 }
 
-// ---------------------------------------------------------------------------
-// Message router
-//
-// Returning `true` keeps the port open for an async reply. Chrome holds the
-// worker alive while a response is outstanding (up to 30s), which is what makes
-// batch-then-fetch safe here. Every handler catches: an uncaught throw closes
-// the port with no reply and the content script hangs until its own timeout.
-// ---------------------------------------------------------------------------
-
 const handlers = {
   async [MSG.CLASSIFY](payload, sender) {
     const settings = await getSettings();
@@ -87,7 +61,7 @@ const handlers = {
     if (platform && settings.sites[platform] === false) {
       return { results: {}, degraded: false, disabled: true };
     }
-    void sender; // sender.tab is available if you ever need per-tab state
+    void sender;
     return classifyItems(payload?.items || [], settings);
   },
 
@@ -144,5 +118,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .then((data) => sendResponse({ ok: true, data }))
     .catch((err) => sendResponse({ ok: false, error: String(err?.message || err) }));
 
-  return true; // async reply
+  return true;
 });

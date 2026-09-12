@@ -4,15 +4,6 @@ import { summarize, REASON_LABELS } from '../lib/events.js';
 import { mockEvents } from '../lib/mock.js';
 import { rpc } from '../lib/rpc.js';
 
-// ---------------------------------------------------------------------------
-// Mood Dashboard.
-//
-// UI/UX lead: the charts here are structural placeholders — correct data, plain
-// presentation. `summarize()` in lib/events.js is a pure function, so you can
-// design against `mockEvents()` with zero backend running and the shape will be
-// identical when the real pipeline lands.
-// ---------------------------------------------------------------------------
-
 export default function App() {
   const [events, setEvents] = useState(null);
   const [useMock, setUseMock] = useState(false);
@@ -23,17 +14,11 @@ export default function App() {
       .catch(() => setEvents([]));
 
   useEffect(() => {
-    // Outside the extension (`npm run preview`) there is no chrome.* at all.
-    // Bail to sample data so this page can be opened in any browser — which is
-    // what makes it designable by someone who never loads the extension, and
-    // projectable on a screen without a laptop full of Chrome flags.
     if (typeof chrome === 'undefined' || !chrome.storage) {
       setEvents([]);
       return;
     }
     load();
-    // Live: the service worker writes the event log to storage after every
-    // batch, so the dashboard updates while you scroll in another tab.
     const onChange = (changes, area) => {
       if (area === 'local' && changes.events) setEvents(changes.events.newValue || []);
     };

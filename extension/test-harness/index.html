@@ -57,7 +57,6 @@
     </div>
 
     <script>
-      // The content script's dev hook reads this attribute. See detectPlatform().
       const params = new URLSearchParams(location.search);
       const platform = params.get('platform') || 'x';
       document.documentElement.dataset.cfPlatform = platform;
@@ -66,8 +65,6 @@
         location.search = `?platform=${e.target.value}`;
       });
 
-      // Half of these contain words the mock backend scores as toxic/NSFW, so you
-      // should see a roughly even split of blurred and clean posts.
       const TOXIC = [
         'honestly everyone in this thread is an idiot and I hate all of you',
         'what a stupid take, this whole community is trash',
