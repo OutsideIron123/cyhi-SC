@@ -223,4 +223,16 @@ test('summarize splits by all three platforms', () => {
   );
 });
 
+test('a cold status reading is treated as stale, not as offline', () => {
+  // Mirrors the GET_STATUS staleness rule in background/index.js. A freshly
+  // revived MV3 worker has checkedAt === 0, which must trigger a real health
+  // check rather than being reported as "backend offline".
+  const STALE_MS = 20000;
+  const age = (checkedAt) => (checkedAt ? Date.now() - checkedAt : Infinity);
+
+  assert.ok(age(0) > STALE_MS, 'never-checked must be stale');
+  assert.ok(age(Date.now() - 60000) > STALE_MS, 'a minute old must be stale');
+  assert.ok(!(age(Date.now() - 1000) > STALE_MS), 'a fresh reading is reused');
+});
+
 console.log(process.exitCode ? `\n${passed} passed, some failed` : `${passed} passed`);

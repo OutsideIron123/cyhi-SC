@@ -6,6 +6,9 @@ import * as backend from './backend.js';
 import * as cache from './cache.js';
 
 const HEALTH_ALARM = 'cf:health';
+// A worker that just woke up has no idea whether the backend is up. Anything
+// older than this gets re-checked rather than reported from memory.
+const STATUS_STALE_MS = 20000;
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install') {
@@ -95,6 +98,14 @@ const handlers = {
 
   async [MSG.GET_STATUS]() {
     const settings = await getSettings();
+    // backend.status lives in worker memory, and opening the popup is often what
+    // revives a dead worker - at which point status has reset to online:false and
+    // the popup would report the backend down while it is perfectly healthy.
+    // Re-check for real whenever the reading is cold or stale.
+    const age = backend.status.checkedAt ? Date.now() - backend.status.checkedAt : Infinity;
+    if (age > STATUS_STALE_MS) {
+      await backend.health(settings.backendUrl);
+    }
     return {
       ...backend.status,
       backendUrl: settings.backendUrl,
