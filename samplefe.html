@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ZenLayer Console</title>
+<style>
+  :root {
+    --bg: #14171a;
+    --panel: #1c2024;
+    --panel-2: #22262b;
+    --border: #2c3136;
+    --text: #e8e6e1;
+    --muted: #8a9099;
+    --safe: #4fb286;
+    --safe-dim: #2d4a3d;
+    --flag: #e2574c;
+    --flag-dim: #4a2d2b;
+    --accent: #d8b25c;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  .wrap {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+    margin-bottom: 28px;
+  }
+
+  header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: 0.2px;
+  }
+
+  header .sub {
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: 4px;
+  }
+
+  #status-pill {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  #status-pill.up { color: var(--safe); border-color: var(--safe-dim); }
+  #status-pill.down { color: var(--flag); border-color: var(--flag-dim); }
+
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+
+  section h2 {
+    font-size: 13px;
+    text-transform: none;
+    color: var(--muted);
+    margin: 0 0 14px 0;
+    font-weight: 600;
+  }
+
+  label {
+    display: block;
+    font-size: 13px;
+    margin-bottom: 6px;
+    color: var(--muted);
+  }
+
+  input[type="text"], input[type="number"], input[type="url"], textarea {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 9px 10px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+  }
+
+  textarea { min-height: 70px; }
+
+  input:focus, textarea:focus, button:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  .field { margin-bottom: 14px; }
+  .field:last-child { margin-bottom: 0; }
+
+  button {
+    background: var(--text);
+    color: var(--bg);
+    border: none;
+    border-radius: 4px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover { opacity: 0.85; }
+  button:disabled { opacity: 0.4; cursor: default; }
+
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+
+  .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+  #image-preview {
+    margin-top: 10px;
+    max-width: 100px;
+    max-height: 100px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    display: none;
+  }
+
+  #results { margin-top: 18px; display: none; }
+
+  .verdict {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-radius: 4px;
+    margin-bottom: 14px;
+    font-weight: 600;
+  }
+  .verdict.allow { background: var(--safe-dim); color: var(--safe); }
+  .verdict.blur { background: var(--flag-dim); color: var(--flag); }
+
+  .check {
+    border-top: 1px solid var(--border);
+    padding: 12px 0;
+  }
+  .check:first-of-type { border-top: none; }
+
+  .check-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+  .check-name { color: var(--muted); }
+  .check-score { }
+
+  .bar-track {
+    height: 5px;
+    background: var(--panel-2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .bar-fill { height: 100%; background: var(--muted); }
+  .bar-fill.flagged { background: var(--flag); }
+
+  .check-detail {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  #error-box {
+    display: none;
+    background: var(--flag-dim);
+    color: var(--flag);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-size: 13px;
+    margin-top: 14px;
+  }
+
+  #trigger-status {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 8px;
+    min-height: 16px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>ZenLayer Console</h1>
+      <div class="sub">Manual test harness for the /classify backend</div>
+    </div>
+    <div id="status-pill" class="mono">checking&hellip;</div>
+  </header>
+
+  <section>
+    <h2>Server</h2>
+    <div class="field">
+      <label for="base-url">Base URL</label>
+      <input type="url" id="base-url" value="http://localhost:8000" class="mono" />
+    </div>
+    <button class="secondary" id="check-health-btn" type="button">Check health</button>
+  </section>
+
+  <section>
+    <h2>Trigger list</h2>
+    <div class="field">
+      <label for="triggers">Topics to flag (one per line)</label>
+      <textarea id="triggers" class="mono">layoffs
+spoilers
+political argument</textarea>
+    </div>
+    <button class="secondary" id="update-triggers-btn" type="button">Update triggers</button>
+    <div id="trigger-status" class="mono"></div>
+  </section>
+
+  <section>
+    <h2>Test a post</h2>
+    <div class="field">
+      <label for="post-text">Post text</label>
+      <textarea id="post-text" placeholder="Type a sample post to screen&hellip;"></textarea>
+    </div>
+    <div class="field">
+      <label for="post-image">Image (optional)</label>
+      <input type="file" id="post-image" accept="image/*" />
+      <img id="image-preview" alt="preview" />
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="toxicity-threshold">Toxicity threshold</label>
+        <input type="number" id="toxicity-threshold" class="mono" value="0.70" min="0" max="1" step="0.01" />
+      </div>
+      <div class="field">
+        <label for="similarity-threshold">Similarity threshold</label>
+        <input type="number" id="similarity-threshold" class="mono" value="0.45" min="0" max="1" step="0.01" />
+      </div>
+    </div>
+    <button id="classify-btn" type="button">Classify</button>
+
+    <div id="error-box" class="mono"></div>
+
+    <div id="results">
+      <div id="verdict" class="verdict mono"></div>
+      <div id="checks"></div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function baseUrl() {
+    return $('base-url').value.replace(/\/+$/, '');
+  }
+
+  async function checkHealth() {
+    const pill = $('status-pill');
+    pill.className = 'mono';
+    pill.textContent = 'checking\u2026';
+    try {
+      const res = await fetch(`${baseUrl()}/health`);
+      const body = await res.json();
+      if (res.ok && body.status === 'ok') {
+        pill.textContent = 'online';
+        pill.className = 'mono up';
+      } else {
+        pill.textContent = 'unhealthy';
+        pill.className = 'mono down';
+      }
+    } catch (e) {
+      pill.textContent = 'unreachable';
+      pill.className = 'mono down';
+    }
+  }
+
+  $('check-health-btn').addEventListener('click', checkHealth);
+  checkHealth();
+
+  $('update-triggers-btn').addEventListener('click', async () => {
+    const status = $('trigger-status');
+    const phrases = $('triggers').value
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    status.textContent = 'updating\u2026';
+    try {
+      const res = await fetch(`${baseUrl()}/update-triggers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ triggers: phrases }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.message || 'request failed');
+      status.textContent = `applied ${body.count} trigger${body.count === 1 ? '' : 's'} (${body.encode_ms}ms)`;
+    } catch (e) {
+      status.textContent = `error: ${e.message}`;
+    }
+  });
+
+  let imageBase64 = '';
+
+  $('post-image').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    const preview = $('image-preview');
+    if (!file) {
+      imageBase64 = '';
+      preview.style.display = 'none';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      imageBase64 = reader.result; // data:image/...;base64,...
+      preview.src = imageBase64;
+      preview.style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  });
+
+  function scoreBar(score, flagged) {
+    const pct = Math.max(0, Math.min(1, score)) * 100;
+    return `<div class="bar-track"><div class="bar-fill${flagged ? ' flagged' : ''}" style="width:${pct}%"></div></div>`;
+  }
+
+  function renderResult(result) {
+    const verdict = $('verdict');
+    verdict.className = `verdict mono ${result.action}`;
+    verdict.innerHTML = `<span>${result.action === 'allow' ? 'ALLOW' : 'BLUR'}</span><span>${result.reasons.join(', ') || 'no flags'}</span>`;
+
+    const checks = $('checks');
+    checks.innerHTML = '';
+
+    if (result.toxicity) {
+      const t = result.toxicity;
+      checks.innerHTML += `
+        <div class="check">
+          <div class="check-head"><span class="check-name">toxicity</span><span class="check-score mono">${t.score.toFixed(4)} / ${t.threshold}</span></div>
+          ${scoreBar(t.score, t.flagged)}
+          <div class="check-detail mono">top label: ${t.top_label}</div>
+        </div>`;
+    }
+
+    if (result.semantic) {
+      const s = result.semantic;
+      checks.innerHTML += `
+        <div class="check">
+          <div class="check-head"><span class="check-name">semantic trigger</span><span class="check-score mono">${s.max_similarity.toFixed(4)} / ${s.threshold}</span></div>
+          ${scoreBar(s.max_similarity, s.flagged)}
+          <div class="check-detail mono">${s.matched_trigger ? `matched: "${s.matched_trigger}"` : 'no match'}</div>
+        </div>`;
+    }
+
+    if (result.nsfw) {
+      const n = result.nsfw;
+      checks.innerHTML += `
+        <div class="check">
+          <div class="check-head"><span class="check-name">nsfw</span><span class="check-score mono">${n.score.toFixed(4)}</span></div>
+          ${scoreBar(n.score, n.flagged)}
+          <div class="check-detail mono">label: ${n.label}</div>
+        </div>`;
+    }
+
+    if (result.errors && result.errors.length) {
+      checks.innerHTML += `<div class="check-detail mono">errors: ${result.errors.map((e) => e.message).join('; ')}</div>`;
+    }
+
+    $('results').style.display = 'block';
+  }
+
+  $('classify-btn').addEventListener('click', async () => {
+    const btn = $('classify-btn');
+    const errorBox = $('error-box');
+    errorBox.style.display = 'none';
+    $('results').style.display = 'none';
+
+    const text = $('post-text').value.trim();
+    if (!text && !imageBase64) {
+      errorBox.textContent = 'enter some text or attach an image first';
+      errorBox.style.display = 'block';
+      return;
+    }
+
+    const post = { id: 1 };
+    if (text) post.text = text;
+    if (imageBase64) post.image_base64 = imageBase64;
+
+    btn.disabled = true;
+    btn.textContent = 'Classifying\u2026';
+
+    try {
+      const res = await fetch(`${baseUrl()}/classify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          posts: [post],
+          toxicity_threshold: parseFloat($('toxicity-threshold').value),
+          similarity_threshold: parseFloat($('similarity-threshold').value),
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.message || 'request failed');
+      renderResult(body.results[0]);
+    } catch (e) {
+      errorBox.textContent = `error: ${e.message}`;
+      errorBox.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Classify';
+    }
+  });
+</script>
+</body>
+</html>
