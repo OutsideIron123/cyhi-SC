@@ -1,0 +1,51 @@
+import { ACTION, REASON, PLATFORM } from './protocol.js';
+
+export function mockEvents({ count = 240, minutes = 60, seed = 7 } = {}) {
+  const rand = mulberry32(seed);
+  const now = Date.now();
+  const span = minutes * 60 * 1000;
+  const phrases = ['layoffs and job loss', 'graphic animal cruelty', 'election arguments', 'diet and calories'];
+  const out = [];
+
+  for (let i = 0; i < count; i++) {
+    const progress = i / count;
+    const t = now - span + Math.floor(span * progress) + Math.floor(rand() * 4000);
+    const heat = 0.25 + progress * 0.45;
+    const tox = clamp01(betaish(rand, heat));
+    const nsf = clamp01(betaish(rand, 0.28));
+    const sim = clamp01(betaish(rand, 0.3));
+
+    const reasons = [];
+    if (tox > 0.7) reasons.push(REASON.TOXICITY);
+    if (nsf > 0.6) reasons.push(REASON.NSFW);
+    const tg = sim > 0.55 ? phrases[Math.floor(rand() * phrases.length)] : null;
+    if (tg) reasons.push(REASON.TRIGGER);
+
+    out.push({
+      t,
+      p: rand() > 0.45 ? PLATFORM.X : PLATFORM.REDDIT,
+      a: reasons.length ? (nsf > 0.6 ? ACTION.COLLAPSE : ACTION.BLUR) : ACTION.ALLOW,
+      r: reasons,
+      tox: round2(tox),
+      nsf: round2(nsf),
+      tg,
+      sim: round2(sim),
+      rv: reasons.length > 0 && rand() > 0.82,
+    });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+const round2 = (n) => Math.round(n * 100) / 100;
+const betaish = (rand, center) => center * (rand() + rand()) * 0.9 + rand() * rand() * 0.4;
+
+function mulberry32(a) {
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}

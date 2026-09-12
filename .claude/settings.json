@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "py -3 cyhi-logs/bin/cyhi session-start", "timeout": 20 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "py -3 cyhi-logs/bin/cyhi prompt", "timeout": 10 }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "py -3 cyhi-logs/bin/cyhi session-end", "timeout": 20 }
+        ]
+      }
+    ]
+  }
+}

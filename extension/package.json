@@ -1,0 +1,26 @@
+{
+  "name": "readit-extension",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "MV3 Chrome extension shell for the READIT wellbeing layer (CYHI Track 3).",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build && vite build --config vite.config.content.js",
+    "build:pages": "vite build",
+    "build:content": "vite build --config vite.config.content.js",
+    "preview": "vite",
+    "test": "node scripts/smoke.mjs",
+    "mock-backend": "node scripts/mock-backend.mjs",
+    "clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\""
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.268",
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.0"
+  }
+}

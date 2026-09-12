@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "READIT",
+  "version": "0.1.0",
+  "description": "A wellbeing layer between you and your feed. Scores posts before they render and hands the decision back to you.",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://*.ngrok-free.app/*",
+    "https://*.ngrok-free.dev/*",
+    "https://*.ngrok.io/*",
+    "https://*.trycloudflare.com/*",
+    "https://*.loca.lt/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "READIT"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*",
+        "https://www.reddit.com/*",
+        "https://old.reddit.com/*",
+        "https://reddit.com/*",
+        "http://127.0.0.1/*",
+        "http://localhost/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}
