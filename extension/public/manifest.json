@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "READIT",
-  "version": "0.1.0",
-  "description": "A wellbeing layer between you and your feed. Scores posts before they render and hands the decision back to you.",
+  "version": "0.2.0",
+  "description": "A wellbeing layer between you and your feed. Scores posts on X, Reddit and LinkedIn before they render and hands the decision back to you.",
   "permissions": [
     "storage",
     "alarms"
