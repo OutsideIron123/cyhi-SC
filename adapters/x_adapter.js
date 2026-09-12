@@ -1,57 +1,55 @@
 const processedTweets = new Set();
 
 function hideTweet(tweetNode, reason) {
-  tweetNode.style.filter = "blur(15px)";
-  tweetNode.style.pointerEvents = "none";
-  tweetNode.style.transition = "filter 0.3s ease";
-  
+  if (tweetNode.querySelector('.zenlayer-overlay')) return;
+
   const overlay = document.createElement('div');
+  overlay.className = 'zenlayer-overlay';
   overlay.style.position = 'absolute';
-  overlay.style.top = '0';
-  overlay.style.left = '0';
-  overlay.style.width = '100%';
-  overlay.style.height = '100%';
+  overlay.style.inset = '0';
   overlay.style.display = 'flex';
   overlay.style.alignItems = 'center';
   overlay.style.justifyContent = 'center';
   overlay.style.zIndex = '999';
-  overlay.style.pointerEvents = 'auto'; 
+  overlay.style.backdropFilter = 'blur(16px)';
+  overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.4)';
+  overlay.style.borderRadius = 'inherit';
   
   const button = document.createElement('button');
   button.innerText = `Hidden: ${reason}. Click to reveal.`;
-  button.style.padding = '10px 20px';
-  button.style.backgroundColor = '#ff4a4a';
-  button.style.color = 'white';
+  button.style.padding = '10px 18px';
+  button.style.backgroundColor = '#e02424';
+  button.style.color = '#ffffff';
+  button.style.fontWeight = '600';
   button.style.border = 'none';
-  button.style.borderRadius = '5px';
+  button.style.borderRadius = '6px';
   button.style.cursor = 'pointer';
+  button.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
   
-  button.addEventListener('click', () => {
-    tweetNode.style.filter = "none";
-    tweetNode.style.pointerEvents = "auto";
+  button.addEventListener('click', (e) => {
+    e.stopPropagation();
     overlay.remove();
   });
   
   overlay.appendChild(button);
   
   if (getComputedStyle(tweetNode).position === 'static') {
-      tweetNode.style.position = 'relative';
+    tweetNode.style.position = 'relative';
   }
   tweetNode.appendChild(overlay);
 }
 
 function processTweet(tweetNode) {
   const timeLink = tweetNode.querySelector('time')?.closest('a');
-  const tweetId = timeLink ? timeLink.href : tweetNode.innerText.slice(0, 50);
-
-  if (processedTweets.has(tweetId)) return;
-  processedTweets.add(tweetId);
-
   const textEl = tweetNode.querySelector('[data-testid="tweetText"]');
   const imgEl = tweetNode.querySelector('[data-testid="tweetPhoto"] img');
   
   const textContent = textEl ? textEl.innerText : "";
   const imageUrl = imgEl ? imgEl.src : null;
+
+  const tweetId = timeLink ? timeLink.href : (textContent.slice(0, 50) || imageUrl);
+  if (!tweetId || processedTweets.has(tweetId)) return;
+  processedTweets.add(tweetId);
 
   if (!textContent && !imageUrl) return;
 
@@ -82,3 +80,4 @@ const observer = new MutationObserver((mutations) => {
 });
 
 observer.observe(document.body, { childList: true, subtree: true });
+document.querySelectorAll('article[data-testid="tweet"]').forEach(processTweet);

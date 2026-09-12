@@ -1,60 +1,57 @@
 const processedPosts = new Set();
 
 function hideInstaPost(postNode, reason) {
-  postNode.style.filter = "blur(20px)";
-  postNode.style.pointerEvents = "none";
-  postNode.style.transition = "filter 0.3s ease";
-  
+  if (postNode.querySelector('.zenlayer-overlay')) return;
+
   const overlay = document.createElement('div');
+  overlay.className = 'zenlayer-overlay';
   overlay.style.position = 'absolute';
   overlay.style.inset = '0';
   overlay.style.display = 'flex';
   overlay.style.alignItems = 'center';
   overlay.style.justifyContent = 'center';
   overlay.style.zIndex = '999';
-  overlay.style.pointerEvents = 'auto';
+  overlay.style.backdropFilter = 'blur(16px)';
+  overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.4)';
+  overlay.style.borderRadius = 'inherit';
   
   const button = document.createElement('button');
   button.innerText = `Hidden: ${reason}. Click to reveal.`;
-  button.style.padding = '10px 20px';
-  button.style.backgroundColor = '#ff4a4a';
-  button.style.color = 'white';
+  button.style.padding = '10px 18px';
+  button.style.backgroundColor = '#e02424';
+  button.style.color = '#ffffff';
+  button.style.fontWeight = '600';
   button.style.border = 'none';
-  button.style.borderRadius = '5px';
+  button.style.borderRadius = '6px';
   button.style.cursor = 'pointer';
+  button.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
   
-  button.addEventListener('click', () => {
-    postNode.style.filter = "none";
-    postNode.style.pointerEvents = "auto";
+  button.addEventListener('click', (e) => {
+    e.stopPropagation();
     overlay.remove();
   });
   
   overlay.appendChild(button);
   
   if (getComputedStyle(postNode).position === 'static') {
-      postNode.style.position = 'relative';
+    postNode.style.position = 'relative';
   }
   postNode.appendChild(overlay);
 }
 
 function processInstaPost(postNode) {
-  const timeEl = postNode.querySelector('time');
-  const postLink = timeEl ? timeEl.closest('a') : null;
-  const postId = postLink ? postLink.href : null;
-
-  if (!postId || processedPosts.has(postId)) return;
-  processedPosts.add(postId);
-
   const imgEl = postNode.querySelector('img[style*="object-fit"]') || postNode.querySelector('img[crossorigin]');
   const imageUrl = imgEl ? imgEl.src : null;
 
   const h1El = postNode.querySelector('h1');
-  let captionText = "";
-  if (h1El) {
-    captionText = h1El.innerText;
-  } else {
-    captionText = postNode.innerText.slice(0, 200); 
-  }
+  const captionText = h1El ? h1El.innerText : postNode.innerText.slice(0, 200);
+
+  const timeEl = postNode.querySelector('time');
+  const postLink = timeEl ? timeEl.closest('a') : null;
+  const postId = postLink?.href || imageUrl || captionText.slice(0, 40) || null;
+
+  if (!postId || processedPosts.has(postId)) return;
+  processedPosts.add(postId);
 
   if (!captionText && !imageUrl) return;
 
@@ -85,3 +82,4 @@ const instaObserver = new MutationObserver((mutations) => {
 });
 
 instaObserver.observe(document.body, { childList: true, subtree: true });
+document.querySelectorAll('article').forEach(processInstaPost);
