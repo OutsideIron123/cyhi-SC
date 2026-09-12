@@ -6,7 +6,7 @@ export const DEFAULT_SETTINGS = {
   version: 1,
   enabled: true,
 
-  backendUrl: 'http://127.0.0.1:5000',
+  backendUrl: 'http://localhost:8000',
 
   toxicity: { enabled: true, threshold: 0.7, action: ACTION.BLUR },
   nsfw: { enabled: true, threshold: 0.6, action: ACTION.BLUR },
@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS = {
   triggers: [],
   defaultTriggerThreshold: 0.55,
 
+  scanImages: true,
   blurAmount: 14,
   showReason: true,
   logEvents: true,
@@ -87,13 +88,3 @@ export function onSettingsChanged(cb) {
   return () => chrome.storage.onChanged.removeListener(handler);
 }
 
-export function toBackendConfig(s) {
-  return {
-    toxicity_threshold: s.toxicity.threshold,
-    nsfw_threshold: s.nsfw.threshold,
-    semantic_threshold: s.defaultTriggerThreshold,
-    triggers: s.triggers
-      .filter((t) => t.enabled)
-      .map((t) => ({ id: t.id, phrase: t.phrase, threshold: t.threshold })),
-  };
-}

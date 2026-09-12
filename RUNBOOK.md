@@ -23,7 +23,7 @@ Python 3.8+ and Node 18+ must be on PATH. Check: `node -v` and `py -3 -V`.
 Real backend, once Role 1 has it:
 
 ```bash
-cd backend && python app.py
+python app.py
 ```
 
 Stand-in, until then — **no models, never demo this**:
@@ -32,8 +32,8 @@ Stand-in, until then — **no models, never demo this**:
 cd extension && npm run mock-backend
 ```
 
-Serves fake `/classify` + `/health` on `:5000`, and a DOM test harness at
-<http://127.0.0.1:5000/>.
+Serves fake `/classify`, `/update-triggers` and `/health` on `:8000`, and a DOM test harness at
+<http://127.0.0.1:8000/>.
 
 ### Terminal 2 — build the extension
 
@@ -76,12 +76,12 @@ changed `manifest.json`, remove the extension and load unpacked again.
 
 ## 3. Verify it works — 7 steps, ~5 minutes
 
-With the mock backend running, open <http://127.0.0.1:5000/>.
+With the mock backend running, open <http://127.0.0.1:8000/>.
 
 | # | Do this | Expect |
 |---|---|---|
 | 1 | Look at the `chrome://extensions` card | No red **Errors** button; **service worker** is a blue link |
-| 2 | Open the popup, set URL to `http://127.0.0.1:5000`, click **Test** | Green dot, "Backend online · NNms" |
+| 2 | Open the popup, set URL to `http://127.0.0.1:8000`, click **Test** | Green dot, "Backend online · NNms" |
 | 3 | Look at the harness page | Posts with "idiot"/"hate"/"trash" are blurred; clean ones are not |
 | 4 | Click **Show anyway** on a blurred post | Blur lifts and does not come back |
 | 5 | Popup → add topic `layoffs and job loss` → reload harness | Layoffs posts now blur too |
@@ -103,8 +103,8 @@ cd extension && npm test
 ## 4. Demo day
 
 ```bash
-cd backend && python app.py          # terminal 1
-ngrok http 5000                      # terminal 2
+python app.py          # terminal 1
+ngrok http 8000                      # terminal 2
 ```
 
 1. Copy the `https://xxxx.ngrok-free.app` URL.
@@ -116,7 +116,7 @@ ngrok http 5000                      # terminal 2
 
 Before submitting, if you want the permission list minimal, strip the two
 dev-only bits: the `data-cf-platform` branch in `detectPlatform()` and the
-`127.0.0.1:5000` entries in `content_scripts.matches`.
+`127.0.0.1` / `localhost` entries in `content_scripts.matches`.
 
 ---
 
@@ -125,7 +125,7 @@ dev-only bits: the `data-cf-platform` branch in `detectPlatform()` and the
 | Symptom | Cause | Fix |
 |---|---|---|
 | Card shows **Errors** after load | Stale `dist` | `npm run build`, then reload the card |
-| Nothing blurs, popup dot is red | Backend not running, or wrong URL | Check terminal 1; `curl http://127.0.0.1:5000/health` |
+| Nothing blurs, popup dot is red | Backend not running, or wrong URL | Check terminal 1; `curl http://127.0.0.1:8000/health` |
 | Nothing blurs, popup dot is green | Selectors don't match the live DOM | Role 2's `ADAPTERS`. Confirm on the harness first — if the harness blurs, it's a selector bug, not a bridge bug |
 | Blurs flicker or vanish on scroll | SPA re-rendered over the veil | Expected; the verdict cache repaints. If it persists, the post id isn't stable |
 | `Extension context invalidated` in console | You reloaded the extension with a tab open | Refresh the tab. Harmless |
@@ -158,7 +158,7 @@ Paste these as-is.
 > blur painting, settings reactivity — is done and should not need changes. For
 > each platform, `extract(el)` returns `{ id, text, images }`. The `id` must be
 > stable across re-renders; it is the cache key for the whole pipeline. Verify
-> against `http://127.0.0.1:5000/` (`npm run mock-backend`) first — if the
+> against `http://127.0.0.1:8000/` (`npm run mock-backend`) first — if the
 > harness blurs but real X doesn't, the bug is your selectors.
 
 **Role 4 — UI/UX**

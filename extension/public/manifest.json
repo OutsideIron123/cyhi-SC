@@ -3,7 +3,10 @@
   "name": "READIT",
   "version": "0.1.0",
   "description": "A wellbeing layer between you and your feed. Scores posts before they render and hands the decision back to you.",
-  "permissions": ["storage", "alarms"],
+  "permissions": [
+    "storage",
+    "alarms"
+  ],
   "host_permissions": [
     "http://localhost/*",
     "http://127.0.0.1/*",
@@ -11,7 +14,13 @@
     "https://*.ngrok-free.dev/*",
     "https://*.ngrok.io/*",
     "https://*.trycloudflare.com/*",
-    "https://*.loca.lt/*"
+    "https://*.loca.lt/*",
+    "https://pbs.twimg.com/*",
+    "https://*.twimg.com/*",
+    "https://i.redd.it/*",
+    "https://preview.redd.it/*",
+    "https://*.redd.it/*",
+    "https://*.redditmedia.com/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -32,7 +41,9 @@
         "http://127.0.0.1/*",
         "http://localhost/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start",
       "all_frames": false
     }

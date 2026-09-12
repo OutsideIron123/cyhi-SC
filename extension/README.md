@@ -8,7 +8,7 @@ ends read from.
 npm install
 npm run build        # -> dist/   (load unpacked points here)
 npm test             # policy engine + dashboard aggregation, no browser needed
-npm run mock-backend # fake scores on :5000 so you can work before the API exists
+npm run mock-backend # fake scores on :8000 so you can work before the API exists
 ```
 
 Load it: `chrome://extensions` → Developer mode → **Load unpacked** → pick
@@ -57,38 +57,63 @@ reloaded extension (give up, unrecoverable).
 
 ### 2. Service worker → Flask
 
+Matches `app.py` in this repo. Port 8000.
+
+```
+POST {backendUrl}/update-triggers
+{ "triggers": ["layoffs and job loss", "graphic animal cruelty"] }
+```
+
+The trigger vault is **server-side state** — this call *replaces* it and re-embeds.
+The worker sends it automatically before a classify whenever the enabled phrase
+list has changed, so nothing else has to remember to.
+
 ```
 POST {backendUrl}/classify
 {
-  "items":  [{ "id": "...", "text": "...", "images": ["..."], "platform": "x" }],
-  "config": { "toxicity_threshold": 0.7, "nsfw_threshold": 0.6,
-              "semantic_threshold": 0.55,
-              "triggers": [{ "id": "t_ab12", "phrase": "layoffs", "threshold": 0.6 }] }
+  "posts": [{ "id": "x_179...", "text": "...", "image_base64": "" }],
+  "toxicity_threshold": 0.70,
+  "similarity_threshold": 0.45
 }
 
 200
-{ "results": [{ "id": "...", "toxicity": 0.0-1.0, "nsfw": 0.0-1.0,
-                "triggers": [{ "id": "t_ab12", "phrase": "layoffs", "score": 0.0-1.0 }] }] }
+{ "results": [{
+    "id": "x_179...",
+    "flagged": false,
+    "flags":     { "toxicity": false, "semantic_trigger": false, "nsfw": false },
+    "toxicity":  { "score": 0.02, "top_label": "neutral", "scores": {...} },
+    "semantic":  { "max_similarity": 0.31, "matched_trigger": null,
+                   "matches": [], "similarities": { "<phrase>": 0.31 } },
+    "nsfw":      { "score": 0.04, "label": "normal", "tags": [] } | null,
+    "errors": []
+  }] }
 ```
 
 ```
-GET {backendUrl}/health  ->  { "status": "ok", "models": { ... } }
+GET {backendUrl}/health  ->  { "status": "ok", "models": {...}, "triggers": {...} }
 ```
 
-**The backend returns scores, never decisions.** Thresholds live in
-`chrome.storage.local` and are applied in `src/background/decide.js`. That is
-why a slider moves and the next scroll behaves differently with no redeploy and
-no model reload. `config` is sent anyway so the backend can skip trigger
-embeddings it knows will not clear the bar.
+Three things about this contract are load-bearing:
 
-Backend notes for Role 1:
-- `flask-cors` on, or the worker's fetch is blocked.
-- Batches arrive up to 16 items. Return one row per input id, same order not required.
-- A missing id is treated as *allow*, not *block*. A model crash must never blank the feed.
-- ngrok's free tier serves an HTML interstitial to browser-ish clients; the worker
-  sends `ngrok-skip-browser-warning: true` on every request, so don't strip it.
+- **We read `score`, not `flagged`.** The backend computes `flagged` from the
+  thresholds we sent, but the extension re-derives the action client-side in
+  `decide.js`. That keeps one decision point and lets a slider take effect on the
+  next scroll. It also means the NSFW slider works even though the backend's own
+  `flagged` is a label check rather than a threshold.
+- **`similarities` is keyed by phrase**, not by trigger id, so `decide.js` matches
+  on phrase text. Rename a trigger in the popup and it is a different trigger.
+- **`similarity_threshold` is batch-wide, but the popup has one per trigger.** We
+  send the *loosest* enabled threshold so the backend filters nothing we might
+  want, then apply each trigger's own threshold locally.
 
----
+Images are `image_base64`, not URLs. The worker fetches the first image of a post
+and base64s it (`src/background/images.js`), capped at 6 images per batch and 3MB
+each, cached by URL. That needs host permissions for the image CDNs, which are in
+the manifest. Turn it off with the "Send images for scanning" toggle — it is the
+slow part of a batch.
+
+A post the backend omits, or that comes back with `errors`, is treated as *allow*.
+A model crash must never blank the feed.
 
 ## How this survives MV3
 
@@ -146,11 +171,11 @@ subscribes to `chrome.storage.onChanged` instead of receiving broadcasts.
 ## Testing without a backend or a real timeline
 
 `npm run mock-backend` serves both a fake `/classify` and a **test harness** at
-<http://127.0.0.1:5000/> — fake posts in real X and Reddit DOM shapes.
+<http://127.0.0.1:8000/> — fake posts in real X and Reddit DOM shapes.
 
 ```bash
-npm run mock-backend      # API + harness on :5000
-# then open http://127.0.0.1:5000/  with the extension loaded
+npm run mock-backend      # API + harness on :8000
+# then open http://127.0.0.1:8000/  with the extension loaded
 ```
 
 This is how you prove the bridge works independently of the other two roles. A
@@ -159,13 +184,13 @@ harness is a selector bug. Buttons on the page append posts (MutationObserver)
 and burst 40 at once (batching). `?platform=reddit` switches DOM shape.
 
 The harness declares its shape via `data-cf-platform` on `<html>`, which
-`detectPlatform()` honours. That branch and the `127.0.0.1:5000` content-script
+`detectPlatform()` honours. That branch and the localhost content-script
 match in the manifest are dev-only — strip both before submission if you want
 the permission list as small as it can be.
 
 What to check, in order:
 1. `chrome://extensions` → the card shows no errors, and **service worker** is a live link.
-2. Popup shows a green dot after **Test** against `http://127.0.0.1:5000`.
+2. Popup shows a green dot after **Test** against `http://127.0.0.1:8000`.
 3. Harness posts containing "idiot"/"hate"/"trash" blur; clean ones don't.
 4. **Show anyway** lifts one blur and does not re-blur.
 5. Add a trigger "layoffs and job loss", reload the harness — the layoffs posts blur too.
@@ -177,7 +202,7 @@ What to check, in order:
 
 ## Demo-day checklist
 
-1. Role 1 starts Flask, then `ngrok http 5000`.
+1. Role 1 starts Flask (`python app.py`, port 8000), then `ngrok http 8000`.
 2. Paste the `https://….ngrok-free.app` URL into the popup, press **Test**, wait
    for the green dot. No rebuild needed — the URL is just settings.
 3. Add two semantic triggers in plain language. They take effect on the next scroll.

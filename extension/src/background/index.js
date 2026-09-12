@@ -39,6 +39,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (sig !== lastPolicy) {
     lastPolicy = sig;
     void cache.clear();
+    backend.invalidateTriggerSync();
   }
 });
 

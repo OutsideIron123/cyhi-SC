@@ -82,7 +82,7 @@ export default function App() {
 
       <p className="status">
         {status?.online
-          ? `Backend online · ${status.latencyMs}ms`
+          ? `Backend online · ${status.latencyMs}ms${modelName(status) ? ` · ${modelName(status)}` : ''}`
           : `Backend offline${status?.error ? ` · ${status.error}` : ''} — feed passes through unfiltered`}
       </p>
 
@@ -94,7 +94,7 @@ export default function App() {
             type="text"
             spellCheck={false}
             value={settings.backendUrl}
-            placeholder="https://xxxx.ngrok-free.app"
+            placeholder="http://localhost:8000"
             onChange={(e) => update({ backendUrl: e.target.value })}
           />
           <button onClick={testBackend} disabled={testing}>
@@ -115,6 +115,17 @@ export default function App() {
         value={settings.nsfw}
         onChange={(nsfw) => update({ nsfw })}
       />
+      <label className="row">
+        <input
+          type="checkbox"
+          checked={settings.scanImages}
+          onChange={(e) => update({ scanImages: e.target.checked })}
+        />
+        <span className="grow">Send images for scanning</span>
+      </label>
+      <p className="hint">
+        Off means text only. Images are downloaded and sent to your backend, which is slower.
+      </p>
 
       <section>
         <h2>Topics to avoid</h2>
@@ -250,6 +261,11 @@ function Threshold({ label, hint, value, onChange }) {
       </div>
     </section>
   );
+}
+
+function modelName(status) {
+  const n = status?.models?.toxicity?.name;
+  return typeof n === 'string' ? n.split('/').pop() : '';
 }
 
 function sensitivityLabel(v) {

@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const HARNESS = join(dirname(fileURLToPath(import.meta.url)), '..', 'test-harness', 'index.html');
-const PORT = Number(process.env.PORT || 5000);
+const PORT = Number(process.env.PORT || 8000);
 const NASTY = ['idiot', 'stupid', 'hate', 'trash', 'kill', 'worthless', 'scum', 'shut up'];
 const SPICY = ['nsfw', 'nude', 'gore', 'blood', 'graphic'];
+
+let triggerVault = [];
 
 const server = createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -20,36 +22,111 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.url === '/health') {
-    return json(res, { status: 'ok', models: { toxicity: 'MOCK', nsfw: 'MOCK', embed: 'MOCK' } });
+    return json(res, {
+      status: 'ok',
+      service: 'MOCK-no-models',
+      device: 'none',
+      models: { toxicity: { name: 'MOCK' }, embedder: { name: 'MOCK' }, nsfw: { name: 'MOCK' } },
+      triggers: { count: triggerVault.length, phrases: triggerVault },
+    });
+  }
+
+  if (req.url === '/update-triggers' && req.method === 'POST') {
+    const body = await readJson(req);
+    triggerVault = (Array.isArray(body) ? body : body?.triggers || [])
+      .map((t) => String(t).trim())
+      .filter(Boolean);
+    console.log(`/update-triggers  ${triggerVault.length} phrases`);
+    return json(res, { status: 'ok', count: triggerVault.length, triggers: triggerVault });
   }
 
   if (req.url === '/classify' && req.method === 'POST') {
     const body = await readJson(req);
-    const items = body?.items || [];
-    const triggers = body?.config?.triggers || [];
+    const posts = body?.posts || [];
+    const toxThreshold = num(body?.toxicity_threshold, 0.7);
+    const simThreshold = num(body?.similarity_threshold, 0.45);
 
-    await new Promise((r) => setTimeout(r, 60 + items.length * 8));
+    await new Promise((r) => setTimeout(r, 60 + posts.length * 8));
 
-    const results = items.map((item) => {
-      const text = String(item.text || '').toLowerCase();
+    let images = 0;
+    const results = posts.map((post) => {
+      const text = String(post.text || '').toLowerCase();
+      const toxScore = score(text, NASTY);
+      const isToxic = toxScore >= toxThreshold;
+
+      const similarities = {};
+      for (const phrase of triggerVault) similarities[phrase] = overlap(text, phrase);
+      const matches = Object.entries(similarities)
+        .map(([trigger, similarity]) => ({ trigger, similarity }))
+        .filter((m) => m.similarity >= simThreshold)
+        .sort((a, b) => b.similarity - a.similarity);
+      const maxSim = Object.values(similarities).reduce((a, b) => Math.max(a, b), 0);
+
+      let nsfw = null;
+      if (post.image_base64) images += 1;
+      const spicy = score(text, SPICY);
+      if (post.image_base64 || spicy > 0) {
+        const s = Math.max(spicy, post.image_base64 ? 0.2 : 0);
+        nsfw = {
+          flagged: s >= 0.6,
+          score: s,
+          label: s >= 0.6 ? 'nsfw' : 'normal',
+          tags: [],
+          scores: {},
+        };
+      }
+
+      const flags = {
+        toxicity: isToxic,
+        semantic_trigger: matches.length > 0,
+        nsfw: !!nsfw?.flagged,
+      };
+      const flagged = Object.values(flags).some(Boolean);
+      const reasons = [];
+      if (flags.toxicity) reasons.push('toxicity:toxic');
+      if (flags.semantic_trigger) reasons.push(`trigger:${matches[0].trigger}`);
+      if (flags.nsfw) reasons.push('nsfw:nsfw');
+
       return {
-        id: item.id,
-        toxicity: score(text, NASTY),
-        nsfw: Math.max(score(text, SPICY), item.images?.length ? 0.2 : 0),
-        triggers: triggers.map((t) => ({
-          id: t.id,
-          phrase: t.phrase,
-          score: overlap(text, t.phrase),
-        })),
+        id: post.id,
+        flagged,
+        action: flagged ? 'blur' : 'allow',
+        reasons,
+        flags,
+        toxicity: {
+          flagged: isToxic,
+          score: toxScore,
+          threshold: toxThreshold,
+          top_label: isToxic ? 'toxic' : 'neutral',
+          scores: {},
+        },
+        semantic: {
+          flagged: matches.length > 0,
+          max_similarity: maxSim,
+          threshold: simThreshold,
+          matched_trigger: matches[0]?.trigger ?? null,
+          matches,
+          similarities,
+        },
+        nsfw,
+        errors: [],
       };
     });
 
-    console.log(`/classify  ${items.length} items`);
-    return json(res, { results });
+    const flaggedCount = results.filter((r) => r.flagged).length;
+    console.log(`/classify  ${posts.length} posts (${images} images) -> ${flaggedCount} flagged`);
+    return json(res, {
+      status: 'ok',
+      results,
+      summary: { posts: posts.length, images_scored: images, flagged: flaggedCount },
+      thresholds: { toxicity: toxThreshold, similarity: simThreshold },
+    });
   }
 
   res.writeHead(404).end();
 });
+
+const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 
 function score(text, words) {
   const hits = words.filter((w) => text.includes(w)).length;

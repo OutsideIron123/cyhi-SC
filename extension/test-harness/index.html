@@ -84,6 +84,8 @@
       ];
       const POOL = [...TOXIC, ...CLEAN, ...CLEAN, ...SPICY, ...TRIGGERY];
 
+      const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
       let n = 0;
       const feed = document.getElementById('feed');
 
@@ -102,9 +104,13 @@
         }
         const el = document.createElement('article');
         el.setAttribute('data-testid', 'tweet');
+        const photo = id % 4 === 0
+          ? `<div data-testid="tweetPhoto"><img src="${PIXEL}" width="120" height="80" alt="" /></div>`
+          : '';
         el.innerHTML = `
           <div class="handle">Test Account <span>@test_${id} · now</span></div>
           <div data-testid="tweetText">${text}</div>
+          ${photo}
           <a href="/test_${id}/status/${'1790000000000' + String(100000 + id)}" class="tag">permalink</a>`;
         return el;
       }
