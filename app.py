@@ -15,8 +15,11 @@ from __future__ import annotations
 import base64
 import binascii
 import io
+import joblib
+import json
 import logging
 import os
+import re
 import threading
 import time
 from typing import Any
@@ -28,14 +31,18 @@ from PIL import Image, UnidentifiedImageError
 from sentence_transformers import SentenceTransformer
 from transformers import pipeline
 
+# --------------------------------------------------------------------------- #
+# Configuration
+# --------------------------------------------------------------------------- #
+
 TORCH_THREADS = int(os.getenv("TORCH_THREADS", "4"))
 
 TOXICITY_MODEL = "unitary/toxic-bert"
 EMBEDDER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 NSFW_MODEL = "Falconsai/nsfw_image_detection"
 
-TEXT_MAX_LENGTH = 128          
-IMAGE_SIZE = (224, 224)        
+TEXT_MAX_LENGTH = 128          # tokens fed to the toxicity classifier
+IMAGE_SIZE = (224, 224)        # NSFW classifier input resolution
 TEXT_BATCH_SIZE = 16
 IMAGE_BATCH_SIZE = 8
 
@@ -48,12 +55,16 @@ DEFAULT_TOXICITY_THRESHOLD = 0.70
 DEFAULT_SIMILARITY_THRESHOLD = 0.45
 DEFAULT_TRIGGERS = ["spoilers", "layoffs", "political argument"]
 
+# Where this one user's trigger list survives a restart. A single JSON file is
+# plenty here -- one user, one machine, no concurrent writers to worry about.
+TRIGGERS_FILE = os.getenv("TRIGGERS_FILE", "triggers.json")
 
+# Labels the upstream checkpoints emit, normalized to lowercase for matching.
 TOXIC_POSITIVE_LABELS = {"toxic", "label_1"}
 NSFW_POSITIVE_LABELS = {"nsfw", "porn", "label_1"}
 
-
-
+# Torch must be pinned to a fixed thread count *before* any model is built,
+# otherwise it grabs every core on the box and starves the request loop.
 torch.set_num_threads(TORCH_THREADS)
 
 logging.basicConfig(
@@ -61,6 +72,12 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
 )
 log = logging.getLogger("zenlayer")
+
+
+# --------------------------------------------------------------------------- #
+# Model loading (startup only)
+# --------------------------------------------------------------------------- #
+
 
 def _load_toxicity_classifier():
     """Text classifier returning every label's probability, INT8 quantized.
@@ -79,7 +96,9 @@ def _load_toxicity_classifier():
         max_length=TEXT_MAX_LENGTH,
         device=-1,
     )
-    
+    pipe.model = torch.quantization.quantize_dynamic(
+        pipe.model, {torch.nn.Linear}, dtype=torch.qint8
+    )
     pipe.model.eval()
     return pipe
 
@@ -115,6 +134,12 @@ log.info("  NSFW image classifier ready")
 
 log.info("All models loaded in %.1fs", time.perf_counter() - _t0)
 
+
+# --------------------------------------------------------------------------- #
+# Trigger vault
+# --------------------------------------------------------------------------- #
+
+
 class TriggerVault:
     """The user's custom topic list plus its precomputed embedding matrix.
 
@@ -129,7 +154,7 @@ class TriggerVault:
 
     def _encode(self, phrases: list[str]) -> tuple[list[str], torch.Tensor]:
         if not phrases:
-            
+            # 0-row matrix keeps the matmul in score() well-formed.
             dim = self._embedder.get_sentence_embedding_dimension()
             return [], torch.empty((0, dim), dtype=torch.float32)
         with torch.inference_mode():
@@ -156,8 +181,139 @@ class TriggerVault:
         return len(self._snapshot[0])
 
 
-TRIGGER_VAULT = TriggerVault(EMBEDDER, DEFAULT_TRIGGERS)
-log.info("Trigger vault seeded with %d phrases: %s", len(TRIGGER_VAULT), DEFAULT_TRIGGERS)
+def _load_persisted_triggers() -> list[str]:
+    """Read the saved trigger list from disk, falling back to defaults.
+
+    Anything wrong with the file (missing, corrupt, wrong shape) is treated
+    as "no saved state" rather than a startup failure -- this is a nice-to-have
+    convenience feature, not something that should ever block the app from
+    starting.
+    """
+    if not os.path.exists(TRIGGERS_FILE):
+        return list(DEFAULT_TRIGGERS)
+    try:
+        with open(TRIGGERS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list) and all(isinstance(p, str) for p in data):
+            return data
+        log.warning("%s did not contain a list of strings; using defaults", TRIGGERS_FILE)
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("Could not read %s (%s); using defaults", TRIGGERS_FILE, exc)
+    return list(DEFAULT_TRIGGERS)
+
+
+def _save_persisted_triggers(phrases: list[str]) -> None:
+    """Best-effort write-through to disk. A failed save shouldn't fail the request."""
+    try:
+        with open(TRIGGERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(phrases, f)
+    except OSError as exc:
+        log.warning("Could not save triggers to %s (%s)", TRIGGERS_FILE, exc)
+
+
+_INITIAL_TRIGGERS = _load_persisted_triggers()
+TRIGGER_VAULT = TriggerVault(EMBEDDER, _INITIAL_TRIGGERS)
+log.info(
+    "Trigger vault seeded with %d phrases from %s: %s",
+    len(TRIGGER_VAULT),
+    TRIGGERS_FILE if os.path.exists(TRIGGERS_FILE) else "defaults (no saved file found)",
+    _INITIAL_TRIGGERS,
+)
+
+# --------------------------------------------------------------------------- #
+# Rage-bait / clickbait detector
+# --------------------------------------------------------------------------- #
+#
+# Trained offline on the Chakraborty et al. clickbait corpus (32K labeled
+# headlines: BuzzFeed/Upworthy/etc. vs. WikiNews/NYT/Guardian/Hindu) using
+# TF-IDF + Logistic Regression. See data_pipeline/ for the full
+# collect -> clean -> preprocess -> train -> evaluate pipeline that produced
+# model.joblib and vectorizer.joblib.
+#
+# Scope note: the training labels are "clickbait" broadly (curiosity-gap
+# listicles included), not "rage-bait" specifically -- outrage-bait is a
+# subset of clickbait, not a perfect match. The heuristic signal below is
+# what narrows the combined score toward the *angry* subset specifically
+# (stock outrage phrasing, shouting caps, stacked punctuation), rather than
+# flagging every listicle. Neither signal alone is "rage-bait detection";
+# the blend is the actual detector.
+
+CLICKBAIT_MODEL_WEIGHT = 0.6
+RAGEBAIT_HEURISTIC_WEIGHT = 0.4
+DEFAULT_RAGEBAIT_THRESHOLD = 0.55
+
+# Stock phrasing patterns common to outrage-bait headlines, independent of topic.
+_RAGEBAIT_PHRASE_PATTERNS = [
+    r"you won'?t believe",
+    r"this will (make|leave) you",
+    r"they don'?t want you to know",
+    r"wait (until|till) you see",
+    r"nobody is talking about this",
+    r"share this before",
+    r"this changes everything",
+    r"is (furious|outraged|losing it) over",
+    r"the (shocking|disturbing|outrageous) truth",
+    r"what happened next will",
+]
+_RAGEBAIT_PATTERN_RE = re.compile("|".join(_RAGEBAIT_PHRASE_PATTERNS), re.IGNORECASE)
+
+CLICKBAIT_VECTORIZER = joblib.load(os.path.join(os.path.dirname(__file__), "vectorizer.joblib"))
+CLICKBAIT_MODEL = joblib.load(os.path.join(os.path.dirname(__file__), "model.joblib"))
+log.info(
+    "Clickbait model loaded (TF-IDF + LogisticRegression, %d vocab terms)",
+    len(CLICKBAIT_VECTORIZER.get_feature_names_out()),
+)
+
+
+def _ragebait_heuristics(text: str) -> float:
+    """Structural signal: shouty caps, stacked punctuation, stock phrasing.
+
+    Returns 0..1. Pure string analysis, no model involved -- cheap enough to
+    run on every post regardless of length.
+    """
+    words = text.split()
+    if not words:
+        return 0.0
+
+    shouty_words = sum(1 for w in words if len(w) >= 3 and w.isupper())
+    caps_ratio = shouty_words / len(words)
+
+    stacked_punct = len(re.findall(r"[!?]{2,}", text))
+    punct_ratio = min(stacked_punct / 3, 1.0)  # 3+ instances saturates this signal
+
+    phrase_hit = 1.0 if _RAGEBAIT_PATTERN_RE.search(text) else 0.0
+
+    # Phrase match is the strongest signal; caps/punctuation are supporting evidence.
+    score = 0.5 * phrase_hit + 0.3 * min(caps_ratio * 2, 1.0) + 0.2 * punct_ratio
+    return min(score, 1.0)
+
+
+def _run_ragebait(texts: list[str]) -> list[dict[str, Any]]:
+    """Per-text rage-bait score: blended trained-model + heuristic signal."""
+    features = CLICKBAIT_VECTORIZER.transform(texts)
+    clickbait_probs = CLICKBAIT_MODEL.predict_proba(features)[:, 1]
+
+    out: list[dict[str, Any]] = []
+    for text, clickbait_score in zip(texts, clickbait_probs):
+        heuristic_score = _ragebait_heuristics(text)
+        blended = (
+            CLICKBAIT_MODEL_WEIGHT * float(clickbait_score)
+            + RAGEBAIT_HEURISTIC_WEIGHT * heuristic_score
+        )
+        out.append(
+            {
+                "score": round(blended, 4),
+                "clickbait_model_score": round(float(clickbait_score), 4),
+                "heuristic_score": round(heuristic_score, 4),
+            }
+        )
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Inference helpers
+# --------------------------------------------------------------------------- #
+
 
 def _scores_to_dict(raw: Any) -> dict[str, float]:
     """Flatten a pipeline result into {label: probability}.
@@ -179,8 +335,8 @@ def _positive_score(scores: dict[str, float], positive_labels: set[str]) -> floa
     for label, score in scores.items():
         if label in positive_labels:
             return score
-    
-    
+    # Binary head with an unrecognized positive label: infer it as the complement
+    # of the obvious negative one ("non-toxic", "normal", "safe", ...).
     if len(scores) == 2:
         for label, score in scores.items():
             if label.startswith(("non", "not", "normal", "safe", "neutral")):
@@ -225,7 +381,7 @@ def _run_semantic(texts: list[str], threshold: float) -> list[dict[str, Any]]:
             batch_size=TEXT_BATCH_SIZE,
             show_progress_bar=False,
         ).float()
-        
+        # Both sides are L2-normalized, so the dot product *is* cosine similarity.
         similarities = post_embeddings @ trigger_embeddings.T
 
     out: list[dict[str, Any]] = []
@@ -279,6 +435,12 @@ def _run_nsfw(images: list[Image.Image]) -> list[dict[str, float]]:
             raw = NSFW_PIPELINE(chunk, batch_size=len(chunk))
             results.extend(_scores_to_dict(item) for item in raw)
     return results
+
+
+# --------------------------------------------------------------------------- #
+# Request validation
+# --------------------------------------------------------------------------- #
+
 
 class BadRequest(Exception):
     """Client-side validation failure -> 400."""
@@ -359,8 +521,13 @@ def _clean_posts(raw: Any) -> list[dict[str, Any]]:
         )
     return posts
 
+
+# --------------------------------------------------------------------------- #
+# Flask app
+# --------------------------------------------------------------------------- #
+
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024  
+app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024  # base64 feeds get large
 CORS(app, resources={r"/*": {"origins": os.getenv("CORS_ORIGINS", "*")}})
 
 
@@ -414,11 +581,19 @@ def health():
                     "input_size": list(IMAGE_SIZE),
                     "loaded": True,
                 },
+                "ragebait": {
+                    "method": "trained clickbait model (TF-IDF + LogisticRegression) + heuristics",
+                    "vocab_size": len(CLICKBAIT_VECTORIZER.get_feature_names_out()),
+                    "model_weight": CLICKBAIT_MODEL_WEIGHT,
+                    "heuristic_weight": RAGEBAIT_HEURISTIC_WEIGHT,
+                    "loaded": True,
+                },
             },
             "triggers": {"count": len(phrases), "phrases": phrases},
             "defaults": {
                 "toxicity_threshold": DEFAULT_TOXICITY_THRESHOLD,
                 "similarity_threshold": DEFAULT_SIMILARITY_THRESHOLD,
+                "ragebait_threshold": DEFAULT_RAGEBAIT_THRESHOLD,
             },
         }
     )
@@ -430,8 +605,9 @@ def update_triggers():
     phrases = _clean_triggers(_json_body())
     started = time.perf_counter()
     applied = TRIGGER_VAULT.replace(phrases)
+    _save_persisted_triggers(applied)
     elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
-    log.info("Trigger vault updated: %d phrases in %.2fms", len(applied), elapsed_ms)
+    log.info("Trigger vault updated: %d phrases in %.2fms (saved to %s)", len(applied), elapsed_ms, TRIGGERS_FILE)
     return jsonify(
         {
             "status": "ok",
@@ -452,6 +628,7 @@ def classify():
     posts = _clean_posts(body.get("posts"))
     toxicity_threshold = _as_threshold(body, "toxicity_threshold", DEFAULT_TOXICITY_THRESHOLD)
     similarity_threshold = _as_threshold(body, "similarity_threshold", DEFAULT_SIMILARITY_THRESHOLD)
+    ragebait_threshold = _as_threshold(body, "ragebait_threshold", DEFAULT_RAGEBAIT_THRESHOLD)
 
     started = time.perf_counter()
     results: list[dict[str, Any]] = [
@@ -459,22 +636,24 @@ def classify():
             "id": post["id"],
             "flagged": False,
             "reasons": [],
-            "flags": {"toxicity": False, "semantic_trigger": False, "nsfw": False},
+            "flags": {"toxicity": False, "semantic_trigger": False, "nsfw": False, "ragebait": False},
             "toxicity": None,
             "semantic": None,
             "nsfw": None,
+            "ragebait": None,
             "errors": [],
         }
         for post in posts
     ]
 
-    
+    # --- text lane: one batched pass for toxicity, one for embeddings --------
     text_indices = [i for i, post in enumerate(posts) if post["text"]]
     texts = [posts[i]["text"] for i in text_indices]
 
     if texts:
         toxicity_scores = _run_toxicity(texts)
         semantic_hits = _run_semantic(texts, similarity_threshold)
+        ragebait_hits = _run_ragebait(texts)
 
         for slot, index in enumerate(text_indices):
             result = results[index]
@@ -504,14 +683,28 @@ def classify():
                 "similarities": hit["all_similarities"],
             }
 
+            rage = ragebait_hits[slot]
+            is_ragebait = rage["score"] >= ragebait_threshold
+            result["ragebait"] = {
+                "flagged": is_ragebait,
+                "score": rage["score"],
+                "threshold": ragebait_threshold,
+                "margin": round(rage["score"] - ragebait_threshold, 4),
+                "clickbait_model_score": rage["clickbait_model_score"],
+                "heuristic_score": rage["heuristic_score"],
+            }
+
             result["flags"]["toxicity"] = is_toxic
             result["flags"]["semantic_trigger"] = is_triggered
+            result["flags"]["ragebait"] = is_ragebait
             if is_toxic:
                 result["reasons"].append(f"toxicity:{top_label}")
             if is_triggered:
                 result["reasons"].append(f"trigger:{hit['matched_trigger']}")
+            if is_ragebait:
+                result["reasons"].append("ragebait")
 
-    
+    # --- image lane: decode first, then one batched NSFW pass ----------------
     image_indices: list[int] = []
     images: list[Image.Image] = []
     for index, post in enumerate(posts):
@@ -521,7 +714,7 @@ def classify():
             images.append(_decode_image(post["image_base64"]))
             image_indices.append(index)
         except ValueError as exc:
-            
+            # A malformed image fails that post only; the rest of the batch runs.
             results[index]["errors"].append({"stage": "image_decode", "message": str(exc)})
 
     if images:
@@ -569,12 +762,14 @@ def classify():
                     "toxicity": sum(1 for r in results if r["flags"]["toxicity"]),
                     "semantic_trigger": sum(1 for r in results if r["flags"]["semantic_trigger"]),
                     "nsfw": sum(1 for r in results if r["flags"]["nsfw"]),
+                    "ragebait": sum(1 for r in results if r["flags"]["ragebait"]),
                 },
                 "errors": sum(len(r["errors"]) for r in results),
             },
             "thresholds": {
                 "toxicity": toxicity_threshold,
                 "similarity": similarity_threshold,
+                "ragebait": ragebait_threshold,
             },
             "timing_ms": {
                 "total": elapsed_ms,
