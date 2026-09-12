@@ -120,6 +120,30 @@ dev-only bits: the `data-cf-platform` branch in `detectPlatform()` and the
 
 ---
 
+## Running app.py outside Docker
+
+`requirements.txt` pins for the Dockerfile's `python:3.10-slim`. Those pins are
+correct there and should not be changed.
+
+Locally they may not install: `torch==2.3.1` publishes no wheel for Python 3.13
+or 3.14, and `numpy==1.26.4` / `scipy==1.13.1` stop at 3.12. If `py -0p` shows
+only 3.13+, use a venv with relaxed pins instead of editing requirements.txt:
+
+```bash
+py -3.13 -m venv .venv
+.venv/Scripts/python.exe -m pip install --extra-index-url https://download.pytorch.org/whl/cpu   "flask==3.0.3" "flask-cors==4.0.1" "torch>=2.6" "transformers>=4.46,<5"   "sentence-transformers>=3.2,<5" "pillow>=10.3" "scipy>=1.14" "numpy>=2.1"
+.venv/Scripts/python.exe app.py
+```
+
+`transformers` stays on 4.x deliberately — 5.x changed the `pipeline()` surface
+`app.py` uses. The alternative, if you want the exact pins, is installing Python
+3.12 from python.org and using `requirements.txt` unchanged.
+
+First run downloads ~700MB of model weights from HuggingFace, so the first
+`/classify` is slow. That is not the extension.
+
+---
+
 ## 5. When it breaks
 
 | Symptom | Cause | Fix |
