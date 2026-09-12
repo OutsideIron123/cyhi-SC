@@ -26,6 +26,13 @@ export const REASON = {
 export const PLATFORM = {
   X: 'x',
   REDDIT: 'reddit',
+  LINKEDIN: 'linkedin',
+};
+
+export const PLATFORM_LABELS = {
+  [PLATFORM.X]: 'X',
+  [PLATFORM.REDDIT]: 'Reddit',
+  [PLATFORM.LINKEDIN]: 'LinkedIn',
 };
 
 export function allowVerdict(id, degraded = false) {

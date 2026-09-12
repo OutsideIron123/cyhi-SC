@@ -23,7 +23,7 @@ export function mockEvents({ count = 240, minutes = 60, seed = 7 } = {}) {
 
     out.push({
       t,
-      p: rand() > 0.45 ? PLATFORM.X : PLATFORM.REDDIT,
+      p: pickPlatform(rand()),
       a: reasons.length ? (nsf > 0.6 ? ACTION.COLLAPSE : ACTION.BLUR) : ACTION.ALLOW,
       r: reasons,
       tox: round2(tox),
@@ -35,6 +35,9 @@ export function mockEvents({ count = 240, minutes = 60, seed = 7 } = {}) {
   }
   return out.sort((a, b) => a.t - b.t);
 }
+
+const pickPlatform = (r) =>
+  r < 0.45 ? PLATFORM.X : r < 0.8 ? PLATFORM.REDDIT : PLATFORM.LINKEDIN;
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const round2 = (n) => Math.round(n * 100) / 100;

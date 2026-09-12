@@ -20,7 +20,9 @@
     "https://i.redd.it/*",
     "https://preview.redd.it/*",
     "https://*.redd.it/*",
-    "https://*.redditmedia.com/*"
+    "https://*.redditmedia.com/*",
+    "https://media.licdn.com/*",
+    "https://*.licdn.com/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -38,6 +40,8 @@
         "https://www.reddit.com/*",
         "https://old.reddit.com/*",
         "https://reddit.com/*",
+        "https://linkedin.com/*",
+        "https://www.linkedin.com/*",
         "http://127.0.0.1/*",
         "http://localhost/*"
       ],

@@ -5,7 +5,7 @@ import { fetchAsBase64 } from '../src/background/images.js';
 import { summarize } from '../src/lib/events.js';
 import { mockEvents } from '../src/lib/mock.js';
 import { normalize, DEFAULT_SETTINGS } from '../src/lib/settings.js';
-import { ACTION, REASON } from '../src/lib/protocol.js';
+import { ACTION, REASON, PLATFORM, PLATFORM_LABELS } from '../src/lib/protocol.js';
 
 let passed = 0;
 const test = (name, fn) => {
@@ -198,4 +198,29 @@ test('normalize clamps and strips junk', () => {
 });
 
 await new Promise((r) => setTimeout(r, 50));
+test('every platform has a display label', () => {
+  for (const p of Object.values(PLATFORM)) {
+    assert.ok(PLATFORM_LABELS[p], `no label for platform "${p}"`);
+  }
+});
+
+test('linkedin is on by default and normalize keeps site toggles', () => {
+  const s = normalize({});
+  assert.equal(s.sites.linkedin, true);
+  const off = normalize({ sites: { linkedin: false } });
+  assert.equal(off.sites.linkedin, false);
+  assert.equal(off.sites.x, true, 'untouched sites keep their default');
+});
+
+test('summarize splits by all three platforms', () => {
+  const s = summarize(mockEvents({ count: 300, minutes: 60 }));
+  const seen = Object.keys(s.byPlatform).sort();
+  assert.deepEqual(seen, ['linkedin', 'reddit', 'x'], `got ${seen}`);
+  assert.equal(
+    Object.values(s.byPlatform).reduce((a, b) => a + b, 0),
+    s.total,
+    'every event is attributed to exactly one platform'
+  );
+});
+
 console.log(process.exitCode ? `\n${passed} passed, some failed` : `${passed} passed`);

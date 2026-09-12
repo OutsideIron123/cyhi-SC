@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { MSG, REASON } from '../lib/protocol.js';
+import { MSG, REASON, PLATFORM_LABELS } from '../lib/protocol.js';
 import { summarize, REASON_LABELS } from '../lib/events.js';
 import { mockEvents } from '../lib/mock.js';
 import { rpc } from '../lib/rpc.js';
@@ -105,7 +105,7 @@ export default function App() {
         <h2>Where it came from</h2>
         <Bars
           rows={Object.entries(s.byPlatform).map(([p, n]) => ({
-            label: p === 'x' ? 'X' : 'Reddit',
+            label: PLATFORM_LABELS[p] || p,
             value: n,
           }))}
         />

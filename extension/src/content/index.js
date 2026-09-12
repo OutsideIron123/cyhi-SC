@@ -38,6 +38,29 @@ const ADAPTERS = {
       return { id: id ? `r_${id}` : fallbackId(el, text), text, images };
     },
   },
+  [PLATFORM.LINKEDIN]: {
+    hosts: ['linkedin.com', 'www.linkedin.com'],
+    selector: 'div.feed-shared-update-v2, div[data-urn^="urn:li:activity"], div[data-id^="urn:li:activity"]',
+    extract(el) {
+      const urn =
+        el.getAttribute('data-urn') ||
+        el.getAttribute('data-id') ||
+        el.querySelector('[data-urn^="urn:li:activity"]')?.getAttribute('data-urn') ||
+        '';
+      const activity = urn.match(/urn:li:activity:(\d+)/)?.[1];
+
+      const textEl = el.querySelector(
+        '.update-components-text, .feed-shared-update-v2__description, .feed-shared-inline-show-more-text'
+      );
+      const text = (textEl?.innerText || '').replace(/\s*…see more\s*$/i, '').trim();
+
+      const images = [...el.querySelectorAll('.update-components-image img, img.ivm-view-attr__img--centered')]
+        .map((img) => img.currentSrc || img.src)
+        .filter((src) => src && src.startsWith('http') && !src.includes('/profile-'));
+
+      return { id: activity ? `li_${activity}` : fallbackId(el, text), text, images };
+    },
+  },
 };
 
 function fallbackId(el, text) {
@@ -136,6 +159,7 @@ function scan(root) {
       : root.querySelectorAll?.(adapter.selector) || [];
 
   for (const el of nodes) {
+    if (el.parentElement?.closest(adapter.selector)) continue;
     let item;
     try {
       item = adapter.extract(el);

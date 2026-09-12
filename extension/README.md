@@ -115,6 +115,27 @@ slow part of a batch.
 A post the backend omits, or that comes back with `errors`, is treated as *allow*.
 A model crash must never blank the feed.
 
+## Supported platforms
+
+X, Reddit and LinkedIn. Each is one entry in `ADAPTERS` at the top of
+`src/content/index.js`: a host list, a CSS selector and an `extract(el)` that
+returns `{ id, text, images }`. Nothing below that block is platform-specific,
+so a fourth site is one object.
+
+`scan()` skips any post that has a matching ancestor. LinkedIn reshares and X
+quote-tweets both nest a post inside a post, and without that guard the inner
+one is scored separately and blurs on its own.
+
+**LinkedIn selectors are the least stable of the three.** The feed is heavily
+A/B tested and class names change; `.feed-shared-update-v2`,
+`.update-components-text` and the `urn:li:activity` attribute are the current
+hooks, with fallbacks. If LinkedIn silently stops blurring, check those first —
+the console line `[READIT] content script active on linkedin` tells you the
+script is injected and the problem is extraction, not plumbing.
+
+Post ids are prefixed per platform: `x_`, `r_`, `li_`, or `h_` for the text-hash
+fallback where a site gives no stable id.
+
 ## How this survives MV3
 
 The service worker is killed after ~30s idle, routinely mid-scroll. Everything

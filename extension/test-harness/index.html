@@ -21,14 +21,14 @@
         border: 1px solid color-mix(in srgb, canvastext 18%, transparent);
         background: canvas; color: canvastext;
       }
-      article, shreddit-post {
+      article, shreddit-post, .feed-shared-update-v2 {
         display: block; margin: 12px 0; padding: 16px;
         background: canvas; border-radius: 12px;
         border: 1px solid color-mix(in srgb, canvastext 12%, transparent);
       }
       .handle { font-weight: 650; font-size: 13px; }
       .handle span { font-weight: 400; opacity: 0.55; margin-left: 6px; }
-      [data-testid='tweetText'], [slot='text-body'] { margin-top: 6px; }
+      [data-testid='tweetText'], [slot='text-body'], .update-components-text { margin-top: 6px; }
       [slot='title'] { font-weight: 650; margin-top: 4px; display: block; }
       .tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; opacity: 0.5; }
     </style>
@@ -46,6 +46,7 @@
           <select id="platform">
             <option value="x">X shape</option>
             <option value="reddit">Reddit shape</option>
+            <option value="linkedin">LinkedIn shape</option>
           </select>
           <button id="more">Append 8 posts (tests MutationObserver)</button>
           <button id="burst">Burst 40 (tests batching)</button>
@@ -92,6 +93,19 @@
       function makePost() {
         const text = POOL[n % POOL.length];
         const id = ++n;
+        if (platform === 'linkedin') {
+          const el = document.createElement('div');
+          el.className = 'feed-shared-update-v2';
+          el.setAttribute('data-urn', `urn:li:activity:${'730000000000' + String(100000 + id)}`);
+          const photo = id % 4 === 0
+            ? `<div class="update-components-image"><img src="${PIXEL}" width="120" height="80" alt="" /></div>`
+            : '';
+          el.innerHTML = `
+            <div class="handle">Test Person <span>· 1st · now</span></div>
+            <div class="update-components-text">${text}</div>
+            ${photo}`;
+          return el;
+        }
         if (platform === 'reddit') {
           const el = document.createElement('shreddit-post');
           el.setAttribute('id', `t3_test${id}`);
