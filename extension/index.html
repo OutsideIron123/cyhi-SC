@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>READIT — preview</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center;
+        font: 14px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
+        background: color-mix(in srgb, canvastext 4%, canvas); color: canvastext;
+      }
+      .card { max-width: 460px; padding: 32px; }
+      h1 { font-size: 18px; margin: 0 0 6px; }
+      p { opacity: 0.7; margin: 0 0 20px; font-size: 13px; }
+      a {
+        display: block; padding: 14px 16px; margin-bottom: 10px;
+        border: 1px solid color-mix(in srgb, canvastext 15%, transparent);
+        border-radius: 10px; background: canvas; color: canvastext;
+        text-decoration: none; font-weight: 600;
+      }
+      a:hover { background: color-mix(in srgb, canvastext 6%, canvas); }
+      a small { display: block; font-weight: 400; opacity: 0.6; margin-top: 2px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>READIT — design preview</h1>
+      <p>
+        Both pages run here with sample data, outside the extension. No Chrome load,
+        no backend. Edits hot-reload.
+      </p>
+      <a href="/dashboard.html">Mood Dashboard <small>sample session, ~240 posts</small></a>
+      <a href="/popup.html">Popup <small>default settings, writes are no-ops here</small></a>
+    </div>
+  </body>
+</html>

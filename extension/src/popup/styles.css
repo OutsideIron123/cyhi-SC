@@ -1,0 +1,75 @@
+/* Structural only. UI/UX lead: this is yours to replace wholesale — nothing in
+   App.jsx depends on these class names except for layout. */
+
+:root {
+  color-scheme: light dark;
+  --fg: canvastext;
+  --muted: color-mix(in srgb, canvastext 55%, transparent);
+  --line: color-mix(in srgb, canvastext 14%, transparent);
+  --accent: #3d7bff;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  width: 360px;
+  font: 13px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--fg);
+  background: canvas;
+}
+
+.popup { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+.loading { padding: 24px; text-align: center; color: var(--muted); }
+
+header { display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 8px; }
+h1 { font-size: 15px; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 12px; margin: 0; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #c0392b; }
+.dot[data-on='true'] { background: #27ae60; }
+
+.switch { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+.status { margin: -6px 0 0; font-size: 11px; color: var(--muted); }
+
+section { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
+section:first-of-type { border-top: none; padding-top: 0; }
+
+.row { display: flex; align-items: center; gap: 8px; }
+.grow { flex: 1; min-width: 0; }
+.hint { margin: 0; font-size: 11px; color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--muted); min-width: 78px; text-align: right; }
+.phrase { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+input[type='text'], select {
+  font: inherit;
+  padding: 6px 8px;
+  color: var(--fg);
+  background: color-mix(in srgb, canvastext 5%, canvas);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+input[type='range'] { flex: 1; accent-color: var(--accent); min-width: 0; }
+input[type='checkbox'] { accent-color: var(--accent); }
+
+button {
+  font: 600 12px system-ui, sans-serif;
+  padding: 6px 12px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, canvastext 6%, canvas);
+  color: var(--fg);
+  cursor: pointer;
+}
+button:hover { background: color-mix(in srgb, canvastext 12%, canvas); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.ghost { background: none; border-color: transparent; color: var(--muted); }
+
+ul.triggers { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+ul.triggers li { display: flex; flex-direction: column; gap: 2px; }
+ul.triggers .empty { font-size: 11px; color: var(--muted); }
+
+footer { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+footer button:first-child { flex: 1; }

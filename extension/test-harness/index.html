@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>READIT — bridge test harness</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0; padding: 24px;
+        font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+        background: color-mix(in srgb, canvastext 4%, canvas);
+        color: canvastext;
+      }
+      .wrap { max-width: 620px; margin: 0 auto; }
+      header { position: sticky; top: 0; padding: 14px 0; background: color-mix(in srgb, canvastext 4%, canvas); }
+      h1 { font-size: 16px; margin: 0 0 4px; }
+      p.sub { margin: 0 0 12px; font-size: 12px; opacity: 0.7; }
+      .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+      button, select {
+        font: 600 12px system-ui; padding: 7px 12px; border-radius: 8px; cursor: pointer;
+        border: 1px solid color-mix(in srgb, canvastext 18%, transparent);
+        background: canvas; color: canvastext;
+      }
+      article, shreddit-post {
+        display: block; margin: 12px 0; padding: 16px;
+        background: canvas; border-radius: 12px;
+        border: 1px solid color-mix(in srgb, canvastext 12%, transparent);
+      }
+      .handle { font-weight: 650; font-size: 13px; }
+      .handle span { font-weight: 400; opacity: 0.55; margin-left: 6px; }
+      [data-testid='tweetText'], [slot='text-body'] { margin-top: 6px; }
+      [slot='title'] { font-weight: 650; margin-top: 4px; display: block; }
+      .tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; opacity: 0.5; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Bridge test harness</h1>
+        <p class="sub">
+          Fake posts in real X / Reddit DOM shapes. This proves the extension pipeline —
+          extraction → batching → backend → verdict → blur → event log — without needing
+          a logged-in timeline or correct production selectors.
+        </p>
+        <div class="controls">
+          <select id="platform">
+            <option value="x">X shape</option>
+            <option value="reddit">Reddit shape</option>
+          </select>
+          <button id="more">Append 8 posts (tests MutationObserver)</button>
+          <button id="burst">Burst 40 (tests batching)</button>
+          <button id="reset">Reset</button>
+        </div>
+        <p class="sub" id="count"></p>
+      </header>
+      <div id="feed"></div>
+    </div>
+
+    <script>
+      // The content script's dev hook reads this attribute. See detectPlatform().
+      const params = new URLSearchParams(location.search);
+      const platform = params.get('platform') || 'x';
+      document.documentElement.dataset.cfPlatform = platform;
+      document.getElementById('platform').value = platform;
+      document.getElementById('platform').addEventListener('change', (e) => {
+        location.search = `?platform=${e.target.value}`;
+      });
+
+      // Half of these contain words the mock backend scores as toxic/NSFW, so you
+      // should see a roughly even split of blurred and clean posts.
+      const TOXIC = [
+        'honestly everyone in this thread is an idiot and I hate all of you',
+        'what a stupid take, this whole community is trash',
+        'you are worthless and nobody would miss you, shut up',
+        'absolute scum behaviour, hope it ruins them',
+      ];
+      const CLEAN = [
+        'finally got the build working after six hours. the bug was a trailing slash.',
+        'does anyone have a good recommendation for filter coffee near campus',
+        'shipped the first working version of our hackathon project tonight',
+        'the sunset from the third floor lab was genuinely worth staying up for',
+      ];
+      const SPICY = ['posting this nsfw gore compilation, viewer discretion advised'];
+      const TRIGGERY = [
+        'another round of layoffs announced today, third one this quarter',
+        'my whole team got laid off this morning, still processing it',
+      ];
+      const POOL = [...TOXIC, ...CLEAN, ...CLEAN, ...SPICY, ...TRIGGERY];
+
+      let n = 0;
+      const feed = document.getElementById('feed');
+
+      function makePost() {
+        const text = POOL[n % POOL.length];
+        const id = ++n;
+        if (platform === 'reddit') {
+          const el = document.createElement('shreddit-post');
+          el.setAttribute('id', `t3_test${id}`);
+          el.setAttribute('post-title', `Test post ${id}`);
+          el.innerHTML = `
+            <div class="tag">r/testsubreddit</div>
+            <span slot="title">Test post ${id}</span>
+            <div slot="text-body">${text}</div>`;
+          return el;
+        }
+        const el = document.createElement('article');
+        el.setAttribute('data-testid', 'tweet');
+        el.innerHTML = `
+          <div class="handle">Test Account <span>@test_${id} · now</span></div>
+          <div data-testid="tweetText">${text}</div>
+          <a href="/test_${id}/status/${'1790000000000' + String(100000 + id)}" class="tag">permalink</a>`;
+        return el;
+      }
+
+      function append(count) {
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < count; i++) frag.appendChild(makePost());
+        feed.appendChild(frag);
+        document.getElementById('count').textContent = `${n} posts in the DOM`;
+      }
+
+      document.getElementById('more').addEventListener('click', () => append(8));
+      document.getElementById('burst').addEventListener('click', () => append(40));
+      document.getElementById('reset').addEventListener('click', () => {
+        feed.innerHTML = '';
+        n = 0;
+        append(8);
+      });
+
+      append(8);
+    </script>
+  </body>
+</html>

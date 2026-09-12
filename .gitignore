@@ -1,0 +1,8 @@
+cyhi-logs/.local/
+
+node_modules/
+extension/dist/
+
+.DS_Store
+Thumbs.db
+*.log
