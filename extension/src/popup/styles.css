@@ -70,3 +70,16 @@ ul.triggers .empty { font-size: 11px; color: var(--muted); }
 
 footer { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
 footer button:first-child { flex: 1; }
+
+.pagereport {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, canvastext 4%, canvas);
+}
+.pagereport.bad { border-color: color-mix(in srgb, #c0392b 45%, transparent); }
+.pagereport.ok { border-color: color-mix(in srgb, #27ae60 45%, transparent); }
+.pagereport button { margin-top: 6px; padding: 4px 8px; font-size: 11px; }

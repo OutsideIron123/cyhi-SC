@@ -10,6 +10,7 @@ export default function App() {
   const [status, setStatus] = useState(null);
   const [draftTrigger, setDraftTrigger] = useState('');
   const [testing, setTesting] = useState(false);
+  const [page, setPage] = useState(null);
   const writeTimer = useRef(null);
 
   useEffect(() => {
@@ -20,6 +21,7 @@ export default function App() {
     }
     rpc(MSG.GET_SETTINGS).then(setSettings).catch(console.error);
     rpc(MSG.GET_STATUS).then(setStatus).catch(console.error);
+    chrome.storage.local.get('pageStatus').then((b) => setPage(b.pageStatus || null));
   }, []);
 
   const update = useCallback((patch) => {
@@ -85,6 +87,8 @@ export default function App() {
           ? `Backend online · ${status.latencyMs}ms${modelName(status) ? ` · ${modelName(status)}` : ''}`
           : `Backend offline${status?.error ? ` · ${status.error}` : ''} — feed passes through unfiltered`}
       </p>
+
+      <PageReport page={page} />
 
       <section>
         <h2>Backend</h2>
@@ -223,6 +227,37 @@ export default function App() {
           Reset
         </button>
       </footer>
+    </div>
+  );
+}
+
+function PageReport({ page }) {
+  if (!page) {
+    return (
+      <p className="pagereport bad">
+        No page report yet. The content script has not run on any supported site
+        since the extension was loaded. Open X, Reddit or LinkedIn and refresh the tab.
+      </p>
+    );
+  }
+  const age = Math.round((Date.now() - page.ts) / 1000);
+  const ok = page.matched > 0;
+  return (
+    <div className={`pagereport ${ok ? 'ok' : 'bad'}`}>
+      <div>
+        <strong>{page.host}</strong> · {page.platform} · {age}s ago
+      </div>
+      <div>
+        {page.matched} posts matched · {page.seen} sent · {page.painted} filtered
+      </div>
+      {!ok && page.diag && (
+        <button
+          className="ghost"
+          onClick={() => navigator.clipboard.writeText(JSON.stringify(page.diag, null, 2))}
+        >
+          Copy diagnostics
+        </button>
+      )}
     </div>
   );
 }

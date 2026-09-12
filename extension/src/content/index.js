@@ -141,12 +141,32 @@ async function start() {
     // If the feed has had time to render and we still matched nothing, the
     // selectors are wrong for this build of the site. Say so loudly, with the
     // markup that is actually on the page, instead of failing silently.
+    reportPageStatus();
     setTimeout(() => {
-      if (!dead && seen.size === 0) reportNoMatches();
+      if (dead) return;
+      if (seen.size === 0) reportNoMatches();
+      reportPageStatus({ diag: pageDiagnostics() });
     }, 5000);
   };
   if (document.body) attach();
   else document.addEventListener('DOMContentLoaded', attach, { once: true });
+}
+
+function pageDiagnostics() {
+  const adapter = ADAPTERS[platform];
+  const sample = (els, fn) => [...new Set([...els].map(fn).filter(Boolean))].slice(0, 8);
+  return {
+    host: location.host,
+    selector: adapter.selector,
+    matched: document.querySelectorAll(adapter.selector).length,
+    articles: document.querySelectorAll('article').length,
+    dataUrn: sample(document.querySelectorAll('[data-urn]'), (e) => e.getAttribute('data-urn')),
+    dataId: sample(document.querySelectorAll('[data-id]'), (e) => e.getAttribute('data-id')),
+    feedishClasses: sample(
+      document.querySelectorAll('div[class*="feed"],div[class*="update"],div[class*="post"]'),
+      (e) => String(e.className).split(' ')[0]
+    ),
+  };
 }
 
 function reportNoMatches() {
@@ -173,6 +193,26 @@ function reportNoMatches() {
     ),
   });
   console.log('[READIT] copy the object above and send it to whoever owns the adapters.');
+}
+
+function reportPageStatus(extra = {}) {
+  // The popup reads this. A content script that never runs never writes it,
+  // which is itself the answer to "is it even injected on this site".
+  try {
+    chrome.storage.local.set({
+      pageStatus: {
+        ts: Date.now(),
+        host: location.host,
+        platform,
+        matched: document.querySelectorAll(ADAPTERS[platform].selector).length,
+        seen: seen.size,
+        painted: painted.size,
+        ...extra,
+      },
+    });
+  } catch {
+    /* storage unavailable in a dying context */
+  }
 }
 
 function policyChanged(a, b) {
@@ -237,6 +277,7 @@ async function flush() {
         paint(el, verdict, settings);
       }
     }
+    reportPageStatus();
   } catch (err) {
     if (err instanceof ContextInvalidated) {
       dead = true;
