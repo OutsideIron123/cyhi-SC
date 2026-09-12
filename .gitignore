@@ -6,3 +6,6 @@ extension/dist/
 .DS_Store
 Thumbs.db
 *.log
+
+.vite/
+extension/.vite/
