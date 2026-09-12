@@ -23,6 +23,10 @@
     {
       "matches": ["*://*.instagram.com/*"],
       "js": ["adapters/instagram_adapter.js"]
+    },
+    {
+      "matches": ["*://*.linkedin.com/*"],
+      "js": ["adapters/linkedin_adapter.js"]
     }
   ]
 }
