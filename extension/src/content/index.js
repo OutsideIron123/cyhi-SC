@@ -138,9 +138,41 @@ async function start() {
   const attach = () => {
     observer.observe(document.body, { childList: true, subtree: true });
     scan(document);
+    // If the feed has had time to render and we still matched nothing, the
+    // selectors are wrong for this build of the site. Say so loudly, with the
+    // markup that is actually on the page, instead of failing silently.
+    setTimeout(() => {
+      if (!dead && seen.size === 0) reportNoMatches();
+    }, 5000);
   };
   if (document.body) attach();
   else document.addEventListener('DOMContentLoaded', attach, { once: true });
+}
+
+function reportNoMatches() {
+  const adapter = ADAPTERS[platform];
+  const sample = (els, fn) => [...new Set([...els].map(fn).filter(Boolean))].slice(0, 8);
+
+  console.warn(
+    `[READIT] no posts matched on ${platform}. The content script is running, so this is a selector problem, not a permissions one.`
+  );
+  console.log('[READIT] selector tried:', adapter.selector);
+  console.log('[READIT] page diagnostics:', {
+    host: location.host,
+    matched: document.querySelectorAll(adapter.selector).length,
+    articles: document.querySelectorAll('article').length,
+    dataUrn: sample(document.querySelectorAll('[data-urn]'), (e) => e.getAttribute('data-urn')),
+    dataId: sample(document.querySelectorAll('[data-id]'), (e) => e.getAttribute('data-id')),
+    feedishClasses: sample(
+      document.querySelectorAll('div[class*="feed"],div[class*="update"],div[class*="post"]'),
+      (e) => String(e.className).split(' ')[0]
+    ),
+    textCandidates: sample(
+      document.querySelectorAll('[class*="text"],[class*="description"],[class*="break-words"]'),
+      (e) => String(e.className).slice(0, 60)
+    ),
+  });
+  console.log('[READIT] copy the object above and send it to whoever owns the adapters.');
 }
 
 function policyChanged(a, b) {
