@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "ZenLayer",
+  "version": "1.0",
+  "description": "Filters toxic text and NSFW images locally before you see them.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.x.com/*", "*://*.twitter.com/*"],
+      "js": ["adapters/x_adapter.js"]
+    },
+    {
+      "matches": ["*://*.reddit.com/*"],
+      "js": ["adapters/reddit_adapter.js"]
+    },
+    {
+      "matches": ["*://*.instagram.com/*"],
+      "js": ["adapters/instagram_adapter.js"]
+    }
+  ]
+}
