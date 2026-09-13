@@ -8,6 +8,7 @@ const LABELS = {
   [REASON.TOXICITY]: 'toxic language',
   [REASON.NSFW]: 'sensitive imagery',
   [REASON.TRIGGER]: 'a topic you muted',
+  [REASON.BOAST]: 'self-promotion',
 };
 
 export function injectStyles() {

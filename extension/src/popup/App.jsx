@@ -119,6 +119,14 @@ export default function App() {
         value={settings.nsfw}
         onChange={(nsfw) => update({ nsfw })}
       />
+      <Threshold
+        label="Boasting"
+        hint="Humblebrags, promotion announcements, hustle posts — LinkedIn only"
+        value={settings.boast}
+        onChange={(boast) => update({ boast })}
+        min={0.2}
+        max={0.75}
+      />
       <label className="row">
         <input
           type="checkbox"
@@ -262,7 +270,7 @@ function PageReport({ page }) {
   );
 }
 
-function Threshold({ label, hint, value, onChange }) {
+function Threshold({ label, hint, value, onChange, min = 0.1, max = 0.95 }) {
   return (
     <section>
       <div className="row">
@@ -285,8 +293,8 @@ function Threshold({ label, hint, value, onChange }) {
       <div className="row">
         <input
           type="range"
-          min="0.1"
-          max="0.95"
+          min={min}
+          max={max}
           step="0.01"
           disabled={!value.enabled}
           value={value.threshold}

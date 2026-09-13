@@ -88,7 +88,7 @@ async function send(entries, settings) {
     const byId = new Map(rows.map((r) => [r.id, r]));
     verdicts = entries.map(({ item }) => {
       const row = byId.get(item.id);
-      return row ? decide(row, settings) : allowVerdict(item.id, true);
+      return row ? decide(row, settings, item.platform, item.text) : allowVerdict(item.id, true);
     });
     await cache.put(verdicts);
     if (settings.logEvents) {

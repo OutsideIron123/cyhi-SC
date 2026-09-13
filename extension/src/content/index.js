@@ -1,77 +1,9 @@
-import { PLATFORM, ACTION, REASON } from '../lib/protocol.js';
+import { ACTION, REASON } from '../lib/protocol.js';
 import { getSettings, onSettingsChanged } from '../lib/settings.js';
 import { rpc, ContextInvalidated } from '../lib/rpc.js';
 import { MSG } from '../lib/protocol.js';
 import { injectStyles, paint, unpaint } from './overlay.js';
-
-const ADAPTERS = {
-  [PLATFORM.X]: {
-    hosts: ['x.com', 'twitter.com'],
-    selector: 'article[data-testid="tweet"]',
-    extract(el) {
-      const link = el.querySelector('a[href*="/status/"]');
-      const m = link?.getAttribute('href')?.match(/\/status\/(\d+)/);
-      const text = el.querySelector('[data-testid="tweetText"]')?.innerText || '';
-      const images = [...el.querySelectorAll('[data-testid="tweetPhoto"] img')]
-        .map((img) => img.src)
-        .filter(Boolean);
-      return { id: m ? `x_${m[1]}` : fallbackId(el, text), text, images };
-    },
-  },
-  [PLATFORM.REDDIT]: {
-    hosts: ['reddit.com', 'www.reddit.com', 'old.reddit.com'],
-    selector: 'shreddit-post, div.thing[data-fullname]',
-    extract(el) {
-      const id =
-        el.getAttribute('id') ||
-        el.getAttribute('data-fullname') ||
-        el.getAttribute('data-post-id');
-      const title =
-        el.getAttribute('post-title') ||
-        el.querySelector('[slot="title"], a.title')?.innerText ||
-        '';
-      const body = el.querySelector('[slot="text-body"], div.usertext-body')?.innerText || '';
-      const images = [...el.querySelectorAll('img[src^="http"]')]
-        .map((img) => img.src)
-        .filter((src) => !src.includes('/avatar') && !src.includes('styles.redditmedia'));
-      const text = [title, body].filter(Boolean).join('\n\n');
-      return { id: id ? `r_${id}` : fallbackId(el, text), text, images };
-    },
-  },
-  [PLATFORM.LINKEDIN]: {
-    hosts: ['linkedin.com', 'www.linkedin.com'],
-    selector: 'div.feed-shared-update-v2, div[data-urn^="urn:li:activity"], div[data-id^="urn:li:activity"]',
-    extract(el) {
-      const urn =
-        el.getAttribute('data-urn') ||
-        el.getAttribute('data-id') ||
-        el.querySelector('[data-urn^="urn:li:activity"]')?.getAttribute('data-urn') ||
-        '';
-      const activity = urn.match(/urn:li:activity:(\d+)/)?.[1];
-
-      const textEl = el.querySelector(
-        '.update-components-text, .feed-shared-update-v2__description, .feed-shared-inline-show-more-text'
-      );
-      const text = (textEl?.innerText || '').replace(/\s*…see more\s*$/i, '').trim();
-
-      const images = [...el.querySelectorAll('.update-components-image img, img.ivm-view-attr__img--centered')]
-        .map((img) => img.currentSrc || img.src)
-        .filter((src) => src && src.startsWith('http') && !src.includes('/profile-'));
-
-      return { id: activity ? `li_${activity}` : fallbackId(el, text), text, images };
-    },
-  },
-};
-
-function fallbackId(el, text) {
-  let h = 2166136261;
-  const s = text || el.textContent || '';
-  for (let i = 0; i < Math.min(s.length, 300); i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return `h_${(h >>> 0).toString(36)}`;
-}
+import { ADAPTERS } from './adapters.js';
 
 let platform = detectPlatform();
 if (platform) {
@@ -115,7 +47,12 @@ async function start() {
   onSettingsChanged((next) => {
     const before = settings;
     settings = next;
-    if (policyChanged(before, next)) {
+    // Switching back on has to re-scan like a policy change would. Turning off
+    // drops the paint but leaves ids in `seen`, so without this the page stays
+    // unfiltered until you reload it - scan() skips anything already seen, and
+    // the verdict it would repaint from was cleared with `painted`.
+    const switchedOn = next.enabled && before && !before.enabled;
+    if (policyChanged(before, next) || switchedOn) {
       seen.clear();
       for (const [, el] of painted) unpaint(el);
       painted.clear();
@@ -218,8 +155,8 @@ function reportPageStatus(extra = {}) {
 function policyChanged(a, b) {
   if (!a) return true;
   return (
-    JSON.stringify([a.toxicity, a.nsfw, a.triggers, a.backendUrl]) !==
-    JSON.stringify([b.toxicity, b.nsfw, b.triggers, b.backendUrl])
+    JSON.stringify([a.toxicity, a.nsfw, a.boast, a.triggers, a.backendUrl]) !==
+    JSON.stringify([b.toxicity, b.nsfw, b.boast, b.triggers, b.backendUrl])
   );
 }
 

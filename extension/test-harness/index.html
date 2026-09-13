@@ -83,7 +83,20 @@
         'another round of layoffs announced today, third one this quarter',
         'my whole team got laid off this morning, still processing it',
       ];
-      const POOL = [...TOXIC, ...CLEAN, ...CLEAN, ...SPICY, ...TRIGGERY];
+      // LinkedIn only. The last two are the hard cases: congratulating someone
+      // else scores higher against the boast phrases than several real brags,
+      // and must still come through unfiltered.
+      const BOASTY = [
+        "Thrilled to announce that I've been promoted to Senior Engineering Manager! Grateful to my incredible team.",
+        'After 200 rejections, I finally landed my dream job at Google. Never give up on yourself.',
+        "I woke up at 4am every day for a year. Here's what that taught me about winning.",
+        'Huge congrats to Priya on being promoted to Director! So happy for you.',
+        'Congratulations to my former colleague Dana on her new role — well deserved.',
+      ];
+      const POOL =
+        platform === 'linkedin'
+          ? [...TOXIC, ...CLEAN, ...BOASTY, ...SPICY, ...TRIGGERY]
+          : [...TOXIC, ...CLEAN, ...CLEAN, ...SPICY, ...TRIGGERY];
 
       const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 

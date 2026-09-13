@@ -21,6 +21,7 @@ export const REASON = {
   TOXICITY: 'toxicity',
   NSFW: 'nsfw',
   TRIGGER: 'trigger',
+  BOAST: 'boast',
 };
 
 export const PLATFORM = {
@@ -44,6 +45,7 @@ export function allowVerdict(id, degraded = false) {
     nsfw: 0,
     trigger: null,
     similarity: 0,
+    boast: 0,
     degraded,
   };
 }
