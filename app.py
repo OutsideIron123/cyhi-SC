@@ -1,6 +1,6 @@
 """ZenLayer — a local-first wellbeing filter for social feeds.
 
-Three self-hosted models run on CPU and are loaded exactly once at import time:
+Three self-hosted models run on CPU and are loaded on first use (lazy):
 
   1. Toxicity     martin-ha/toxic-comment-model        (dynamic INT8 quantized)
   2. Semantic     all-MiniLM-L6-v2 + a trigger vault   (cosine similarity)
@@ -75,8 +75,18 @@ log = logging.getLogger("zenlayer")
 
 
 # --------------------------------------------------------------------------- #
-# Model loading (startup only)
+# Model loading (lazy initialization)
 # --------------------------------------------------------------------------- #
+
+# Global model cache with thread-safe initialization
+_MODEL_LOCK = threading.Lock()
+_MODELS_LOADED = False
+TOXICITY_PIPELINE = None
+EMBEDDER = None
+NSFW_PIPELINE = None
+CLICKBAIT_VECTORIZER = None
+CLICKBAIT_MODEL = None
+TRIGGER_VAULT = None
 
 
 def _load_toxicity_classifier():
@@ -120,19 +130,39 @@ def _load_nsfw_classifier():
     return pipe
 
 
-log.info("Loading models (torch threads=%d)...", TORCH_THREADS)
-_t0 = time.perf_counter()
-
-TOXICITY_PIPELINE = _load_toxicity_classifier()
-log.info("  toxicity classifier ready (INT8 dynamic quantization applied)")
-
-EMBEDDER = _load_embedder()
-log.info("  semantic embedder ready")
-
-NSFW_PIPELINE = _load_nsfw_classifier()
-log.info("  NSFW image classifier ready")
-
-log.info("All models loaded in %.1fs", time.perf_counter() - _t0)
+def _ensure_models_loaded():
+    """Lazy-load all models on first use. Thread-safe."""
+    global TOXICITY_PIPELINE, EMBEDDER, NSFW_PIPELINE, CLICKBAIT_VECTORIZER, CLICKBAIT_MODEL, TRIGGER_VAULT, _MODELS_LOADED
+    
+    if _MODELS_LOADED:
+        return
+    
+    with _MODEL_LOCK:
+        if _MODELS_LOADED:  # Double-check inside lock
+            return
+        
+        log.info("Loading models (torch threads=%d)...", TORCH_THREADS)
+        _t0 = time.perf_counter()
+        
+        TOXICITY_PIPELINE = _load_toxicity_classifier()
+        log.info("  toxicity classifier ready (INT8 dynamic quantization applied)")
+        
+        EMBEDDER = _load_embedder()
+        log.info("  semantic embedder ready")
+        
+        NSFW_PIPELINE = _load_nsfw_classifier()
+        log.info("  NSFW image classifier ready")
+        
+        # Load clickbait models
+        CLICKBAIT_VECTORIZER = joblib.load(os.path.join(os.path.dirname(__file__), "vectorizer.joblib"))
+        CLICKBAIT_MODEL = joblib.load(os.path.join(os.path.dirname(__file__), "model.joblib"))
+        log.info(
+            "Clickbait model loaded (TF-IDF + LogisticRegression, %d vocab terms)",
+            len(CLICKBAIT_VECTORIZER.get_feature_names_out()),
+        )
+        
+        log.info("All models loaded in %.1fs", time.perf_counter() - _t0)
+        _MODELS_LOADED = True
 
 
 # --------------------------------------------------------------------------- #
@@ -211,14 +241,23 @@ def _save_persisted_triggers(phrases: list[str]) -> None:
         log.warning("Could not save triggers to %s (%s)", TRIGGERS_FILE, exc)
 
 
-_INITIAL_TRIGGERS = _load_persisted_triggers()
-TRIGGER_VAULT = TriggerVault(EMBEDDER, _INITIAL_TRIGGERS)
-log.info(
-    "Trigger vault seeded with %d phrases from %s: %s",
-    len(TRIGGER_VAULT),
-    TRIGGERS_FILE if os.path.exists(TRIGGERS_FILE) else "defaults (no saved file found)",
-    _INITIAL_TRIGGERS,
-)
+def _get_trigger_vault() -> TriggerVault:
+    """Get or initialize the trigger vault (lazy)."""
+    global TRIGGER_VAULT
+    
+    if TRIGGER_VAULT is None:
+        _ensure_models_loaded()
+        _INITIAL_TRIGGERS = _load_persisted_triggers()
+        TRIGGER_VAULT = TriggerVault(EMBEDDER, _INITIAL_TRIGGERS)
+        log.info(
+            "Trigger vault seeded with %d phrases from %s: %s",
+            len(TRIGGER_VAULT),
+            TRIGGERS_FILE if os.path.exists(TRIGGERS_FILE) else "defaults (no saved file found)",
+            _INITIAL_TRIGGERS,
+        )
+    
+    return TRIGGER_VAULT
+
 
 # --------------------------------------------------------------------------- #
 # Rage-bait / clickbait detector
@@ -257,13 +296,6 @@ _RAGEBAIT_PHRASE_PATTERNS = [
 ]
 _RAGEBAIT_PATTERN_RE = re.compile("|".join(_RAGEBAIT_PHRASE_PATTERNS), re.IGNORECASE)
 
-CLICKBAIT_VECTORIZER = joblib.load(os.path.join(os.path.dirname(__file__), "vectorizer.joblib"))
-CLICKBAIT_MODEL = joblib.load(os.path.join(os.path.dirname(__file__), "model.joblib"))
-log.info(
-    "Clickbait model loaded (TF-IDF + LogisticRegression, %d vocab terms)",
-    len(CLICKBAIT_VECTORIZER.get_feature_names_out()),
-)
-
 
 def _ragebait_heuristics(text: str) -> float:
     """Structural signal: shouty caps, stacked punctuation, stock phrasing.
@@ -290,6 +322,7 @@ def _ragebait_heuristics(text: str) -> float:
 
 def _run_ragebait(texts: list[str]) -> list[dict[str, Any]]:
     """Per-text rage-bait score: blended trained-model + heuristic signal."""
+    _ensure_models_loaded()
     features = CLICKBAIT_VECTORIZER.transform(texts)
     clickbait_probs = CLICKBAIT_MODEL.predict_proba(features)[:, 1]
 
@@ -351,6 +384,7 @@ def _chunks(items: list, size: int):
 
 def _run_toxicity(texts: list[str]) -> list[dict[str, float]]:
     """Batched toxicity inference. Returns per-text {label: probability}."""
+    _ensure_models_loaded()
     results: list[dict[str, float]] = []
     with torch.inference_mode():
         for chunk in _chunks(texts, TEXT_BATCH_SIZE):
@@ -361,7 +395,8 @@ def _run_toxicity(texts: list[str]) -> list[dict[str, float]]:
 
 def _run_semantic(texts: list[str], threshold: float) -> list[dict[str, Any]]:
     """Cosine similarity of each text against every trigger phrase."""
-    phrases, trigger_embeddings = TRIGGER_VAULT.snapshot()
+    vault = _get_trigger_vault()
+    phrases, trigger_embeddings = vault.snapshot()
     if not phrases:
         return [
             {
@@ -429,6 +464,7 @@ def _decode_image(payload: str) -> Image.Image:
 
 
 def _run_nsfw(images: list[Image.Image]) -> list[dict[str, float]]:
+    _ensure_models_loaded()
     results: list[dict[str, float]] = []
     with torch.inference_mode():
         for chunk in _chunks(images, IMAGE_BATCH_SIZE):
@@ -556,7 +592,9 @@ def _json_body() -> Any:
 
 @app.get("/health")
 def health():
-    phrases, _ = TRIGGER_VAULT.snapshot()
+    _ensure_models_loaded()
+    vault = _get_trigger_vault()
+    phrases, _ = vault.snapshot()
     return jsonify(
         {
             "status": "ok",
@@ -602,9 +640,11 @@ def health():
 @app.post("/update-triggers")
 def update_triggers():
     """Replace the trigger vault with the caller's topics and re-embed them."""
+    _ensure_models_loaded()
+    vault = _get_trigger_vault()
     phrases = _clean_triggers(_json_body())
     started = time.perf_counter()
-    applied = TRIGGER_VAULT.replace(phrases)
+    applied = vault.replace(phrases)
     _save_persisted_triggers(applied)
     elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
     log.info("Trigger vault updated: %d phrases in %.2fms (saved to %s)", len(applied), elapsed_ms, TRIGGERS_FILE)
@@ -625,6 +665,9 @@ def classify():
     if not isinstance(body, dict):
         raise BadRequest("request body must be a JSON object")
 
+    _ensure_models_loaded()
+    vault = _get_trigger_vault()
+    
     posts = _clean_posts(body.get("posts"))
     toxicity_threshold = _as_threshold(body, "toxicity_threshold", DEFAULT_TOXICITY_THRESHOLD)
     similarity_threshold = _as_threshold(body, "similarity_threshold", DEFAULT_SIMILARITY_THRESHOLD)
@@ -665,22 +708,21 @@ def classify():
             result["toxicity"] = {
                 "flagged": is_toxic,
                 "score": round(toxic_probability, 4),
+                "label": top_label,
                 "threshold": toxicity_threshold,
                 "margin": round(toxic_probability - toxicity_threshold, 4),
-                "top_label": top_label,
-                "scores": {label: round(v, 4) for label, v in scores.items()},
+                "all_labels": {label: round(score, 4) for label, score in scores.items()},
             }
 
             hit = semantic_hits[slot]
             is_triggered = bool(hit["matches"])
             result["semantic"] = {
                 "flagged": is_triggered,
+                "matched_trigger": hit["matched_trigger"],
                 "max_similarity": hit["max_similarity"],
                 "threshold": similarity_threshold,
-                "margin": round(hit["max_similarity"] - similarity_threshold, 4),
-                "matched_trigger": hit["matched_trigger"],
                 "matches": hit["matches"],
-                "similarities": hit["all_similarities"],
+                "all_similarities": hit["all_similarities"],
             }
 
             rage = ragebait_hits[slot]
@@ -786,3 +828,4 @@ if __name__ == "__main__":
         threaded=True,
         debug=False,
     )
+
