@@ -26,13 +26,20 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
+# The clickbait model is loaded by joblib at IMPORT time, not lazily, so an
+# image without these two files does not degrade - it crashes on startup.
+COPY model.joblib vectorizer.joblib ./
 
 # Bake the weights into the image: the container then starts offline in seconds
 # instead of pulling ~600MB from the Hub on first request.
+# These model ids MUST match app.py's TOXICITY_MODEL / NSFW_MODEL /
+# EMBEDDER_MODEL. Baking a different toxicity model than the one app.py asks
+# for is not a build error - it silently re-downloads at first request, which
+# is exactly the cold start this layer exists to prevent.
 RUN python -c "\
 from transformers import pipeline; \
 from sentence_transformers import SentenceTransformer; \
-pipeline('text-classification', model='martin-ha/toxic-comment-model'); \
+pipeline('text-classification', model='unitary/toxic-bert'); \
 pipeline('image-classification', model='Falconsai/nsfw_image_detection'); \
 SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')" \
  && chmod -R a+rX /opt/models
