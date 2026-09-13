@@ -1,7 +1,7 @@
 {
   "name": "readit-extension",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "MV3 Chrome extension shell for the READIT wellbeing layer (CYHI Track 3).",
   "scripts": {
@@ -15,7 +15,8 @@
     "clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\"",
     "e2e": "node scripts/e2e-backend.mjs",
     "build:firefox": "node scripts/build-firefox.mjs",
-    "lint:firefox": "web-ext lint --source-dir dist-firefox"
+    "lint:firefox": "web-ext lint --source-dir dist-firefox",
+    "sign:firefox": "npm run build:firefox && web-ext sign --source-dir dist-firefox --artifacts-dir web-ext-artifacts --channel unlisted"
   },
   "dependencies": {
     "react": "^18.3.1",
