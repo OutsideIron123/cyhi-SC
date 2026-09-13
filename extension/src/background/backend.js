@@ -1,4 +1,5 @@
 import { fetchAsBase64 } from './images.js';
+import { BOAST_PHRASES } from '../lib/boast.js';
 
 const REQUEST_TIMEOUT_MS = 30000;
 const HEALTH_TIMEOUT_MS = 4000;
@@ -69,8 +70,14 @@ async function postJson(url, body, timeoutMs) {
   }
 }
 
+// Everything the vault needs to hold: the user's own triggers plus, when the
+// boast filter is on, its seed phrases. app.py keys similarities by phrase
+// text, so a phrase that is not in the vault comes back as no key at all -
+// which is exactly how a boast filter silently does nothing.
 function enabledPhrases(settings) {
-  return settings.triggers.filter((t) => t.enabled).map((t) => t.phrase);
+  const own = settings.triggers.filter((t) => t.enabled).map((t) => t.phrase);
+  if (!settings.boast?.enabled) return [...new Set(own)];
+  return [...new Set([...own, ...BOAST_PHRASES])];
 }
 
 export function triggerKey(settings) {
@@ -95,9 +102,10 @@ export async function syncTriggers(settings, { force = false } = {}) {
 }
 
 export function similarityFloor(settings) {
-  const active = settings.triggers.filter((t) => t.enabled);
-  if (!active.length) return settings.defaultTriggerThreshold;
-  return Math.min(...active.map((t) => t.threshold));
+  const floors = settings.triggers.filter((t) => t.enabled).map((t) => t.threshold);
+  if (settings.boast?.enabled) floors.push(settings.boast.threshold);
+  if (!floors.length) return settings.defaultTriggerThreshold;
+  return Math.min(...floors);
 }
 
 async function attachImages(items, settings) {

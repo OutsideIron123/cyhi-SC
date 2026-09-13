@@ -6,6 +6,8 @@ import { summarize } from '../src/lib/events.js';
 import { mockEvents } from '../src/lib/mock.js';
 import { normalize, DEFAULT_SETTINGS } from '../src/lib/settings.js';
 import { ACTION, REASON, PLATFORM, PLATFORM_LABELS } from '../src/lib/protocol.js';
+import { BOAST_PHRASES, readsAsCongratulation } from '../src/lib/boast.js';
+import { ADAPTERS, clean } from '../src/content/adapters.js';
 
 let passed = 0;
 const test = (name, fn) => {
@@ -29,6 +31,9 @@ const base = normalize({
     { id: 't2', phrase: 'dieting', threshold: 0.8, action: ACTION.HIDE, enabled: true },
   ],
 });
+
+// Same policy with the boast filter off, for the assertions that predate it.
+const noBoast = normalize({ ...base, boast: { ...DEFAULT_SETTINGS.boast, enabled: false } });
 
 // Shaped exactly like a row from app.py's /classify response.
 const row = (over = {}) => ({
@@ -124,25 +129,107 @@ test('garbage scores do not throw', () => {
 });
 
 test('similarity floor is the loosest enabled trigger, so nothing is pre-filtered', () => {
-  assert.equal(similarityFloor(base), 0.6);
+  assert.equal(similarityFloor(noBoast), 0.6);
   const withLoose = normalize({
-    ...base,
+    ...noBoast,
     triggers: [...base.triggers, { id: 't3', phrase: 'x', threshold: 0.3, enabled: true }],
   });
   assert.equal(similarityFloor(withLoose), 0.3);
 });
 
-test('similarity floor falls back to the default when no triggers are enabled', () => {
-  const off = normalize({ ...base, triggers: base.triggers.map((t) => ({ ...t, enabled: false })) });
+test('the boast threshold is part of the floor when the filter is on', () => {
+  // Otherwise the backend pre-filters boast similarities away before we see them.
+  assert.equal(similarityFloor(base), base.boast.threshold);
+});
+
+test('similarity floor falls back to the default when nothing is enabled', () => {
+  const off = normalize({ ...noBoast, triggers: base.triggers.map((t) => ({ ...t, enabled: false })) });
   assert.equal(similarityFloor(off), DEFAULT_SETTINGS.defaultTriggerThreshold);
 });
 
 test('trigger sync key ignores disabled triggers', () => {
   const off = normalize({
-    ...base,
+    ...noBoast,
     triggers: [{ ...base.triggers[0] }, { ...base.triggers[1], enabled: false }],
   });
   assert.equal(triggerKey(off), JSON.stringify(['layoffs and job loss']));
+});
+
+test('boast phrases are pushed to the vault, or the backend never scores them', () => {
+  const key = JSON.parse(triggerKey(base));
+  for (const phrase of BOAST_PHRASES) assert.ok(key.includes(phrase), `vault missing: ${phrase}`);
+  assert.ok(key.includes('layoffs and job loss'), 'user triggers survive alongside them');
+});
+
+test('turning the boast filter off takes its phrases back out of the vault', () => {
+  const key = JSON.parse(triggerKey(noBoast));
+  assert.equal(key.length, 2);
+});
+
+// --- boast filter ---------------------------------------------------------
+
+const boastRow = (score) =>
+  row({ id: 'b', semantic: { similarities: { [BOAST_PHRASES[2]]: score } } });
+
+test('a boasting LinkedIn post is caught', () => {
+  const v = decide(boastRow(0.62), base, PLATFORM.LINKEDIN);
+  assert.equal(v.action, base.boast.action);
+  assert.ok(v.reasons.includes(REASON.BOAST));
+  assert.equal(v.boast, 0.62);
+  assert.equal(v.boastPhrase, BOAST_PHRASES[2]);
+});
+
+test('the same post on X and Reddit is left alone', () => {
+  assert.equal(decide(boastRow(0.62), base, PLATFORM.X).action, ACTION.ALLOW);
+  assert.equal(decide(boastRow(0.62), base, PLATFORM.REDDIT).action, ACTION.ALLOW);
+});
+
+test('boast below the slider does not fire but is still reported', () => {
+  const v = decide(boastRow(0.3), base, PLATFORM.LINKEDIN);
+  assert.equal(v.action, ACTION.ALLOW);
+  assert.deepEqual(v.reasons, []);
+  assert.equal(v.boast, 0.3, 'the score is kept so the popup can show near misses');
+});
+
+test('boast at the threshold fires (>=, not >)', () => {
+  assert.notEqual(decide(boastRow(base.boast.threshold), base, PLATFORM.LINKEDIN).action, ACTION.ALLOW);
+});
+
+test('boast takes the best-matching phrase across the whole seed set', () => {
+  const v = decide(
+    row({ semantic: { similarities: { [BOAST_PHRASES[0]]: 0.44, [BOAST_PHRASES[5]]: 0.81 } } }),
+    base,
+    PLATFORM.LINKEDIN
+  );
+  assert.equal(v.boast, 0.81);
+  assert.equal(v.boastPhrase, BOAST_PHRASES[5]);
+});
+
+test('disabled boast filter is ignored even on LinkedIn', () => {
+  assert.equal(decide(boastRow(0.99), noBoast, PLATFORM.LINKEDIN).action, ACTION.ALLOW);
+});
+
+test('a stale vault with no boast keys scores zero rather than throwing', () => {
+  const v = decide(row({ semantic: { similarities: {} } }), base, PLATFORM.LINKEDIN);
+  assert.equal(v.boast, 0);
+  assert.equal(v.action, ACTION.ALLOW);
+});
+
+test('toxicity still outranks a boast collapse', () => {
+  const v = decide(
+    row({ toxicity: { score: 0.9 }, semantic: { similarities: { [BOAST_PHRASES[2]]: 0.9 } } }),
+    normalize({ ...base, boast: { ...base.boast, action: ACTION.BLUR } }),
+    PLATFORM.LINKEDIN
+  );
+  assert.equal(v.action, ACTION.BLUR);
+  assert.ok(v.reasons.includes(REASON.TOXICITY) && v.reasons.includes(REASON.BOAST));
+});
+
+test('boast settings survive an older stored blob that predates the feature', () => {
+  const s = normalize({ enabled: true, toxicity: { threshold: 0.5 } });
+  assert.equal(s.boast.enabled, true);
+  assert.deepEqual(s.boast.platforms, [PLATFORM.LINKEDIN]);
+  assert.equal(s.boast.threshold, DEFAULT_SETTINGS.boast.threshold);
 });
 
 test('data: URLs are unwrapped to bare base64, which is what app.py wants', async () => {
@@ -195,6 +282,196 @@ test('normalize clamps and strips junk', () => {
   assert.equal(s.triggers.length, 1);
   assert.equal(s.triggers[0].phrase, 'ok');
   assert.ok(s.triggers[0].id);
+});
+
+
+test('congratulating someone else is not boasting, whatever the embedder says', () => {
+  // Measured: "huge congrats to Priya on being promoted" scores 0.59 against the
+  // promotion phrases - higher than several genuine brags. Phrases cannot fix
+  // this, so the veto does.
+  const congrats = 'Huge congrats to Priya on being promoted to Director! So happy for you.';
+  const v = decide(boastRow(0.59), base, PLATFORM.LINKEDIN, congrats);
+  assert.equal(v.action, ACTION.ALLOW);
+  assert.deepEqual(v.reasons, []);
+  assert.equal(v.boast, 0.59, 'the score is still reported, only the action is vetoed');
+});
+
+test('the veto recognises the usual congratulation openers', () => {
+  assert.ok(readsAsCongratulation('Congratulations to Dana on her new role - well deserved.'));
+  assert.ok(readsAsCongratulation('Huge congrats to Priya!'));
+  assert.ok(readsAsCongratulation('Shoutout to the team at Acme. Proud of you all.'));
+  assert.ok(readsAsCongratulation('So happy for you, Sam.'));
+});
+
+test('the veto does not fire on ordinary brags', () => {
+  assert.equal(readsAsCongratulation('Thrilled to announce my promotion to Director!'), false);
+  assert.equal(readsAsCongratulation(''), false);
+  assert.equal(readsAsCongratulation(undefined), false);
+});
+
+test('a brag that thanks well-wishers at the end is still caught', () => {
+  // Only the opening is inspected, so a trailing "congrats to my team" does not
+  // buy a brag its way out.
+  const text =
+    'Thrilled to announce I have been promoted to Director. ' +
+    'x'.repeat(240) +
+    ' And congratulations to everyone else promoted this cycle!';
+  assert.equal(readsAsCongratulation(text), false);
+  assert.notEqual(decide(boastRow(0.62), base, PLATFORM.LINKEDIN, text).action, ACTION.ALLOW);
+});
+
+test('congratulating yourself is still a brag', () => {
+  assert.equal(readsAsCongratulation('Congrats to me, I got the promotion!'), false);
+  assert.equal(readsAsCongratulation('Congratulations to our team on smashing the target'), false);
+});
+
+test('no text at all does not veto - the score stands on its own', () => {
+  assert.notEqual(decide(boastRow(0.62), base, PLATFORM.LINKEDIN).action, ACTION.ALLOW);
+});
+
+// --- LinkedIn parser ------------------------------------------------------
+// Hand-rolled stubs: extract() only ever calls querySelector with a fixed set
+// of selector strings, so keying on the literal string is enough and saves
+// pulling in a DOM implementation.
+
+const li = ADAPTERS.linkedin;
+const TEXT_SEL =
+  '.update-components-text, .feed-shared-update-v2__description, ' +
+  '.feed-shared-inline-show-more-text, .update-components-update-v2__commentary';
+
+function img(src) {
+  return { src, currentSrc: '' };
+}
+
+function fakeEl({ attrs = {}, innerText = '', sel = {}, imgs = [] } = {}) {
+  return {
+    innerText,
+    textContent: innerText,
+    getAttribute: (k) => attrs[k] ?? null,
+    querySelector(q) {
+      if (q in sel) return sel[q];
+      if (q === 'img') return imgs[0] || null;
+      return null;
+    },
+    querySelectorAll(q) {
+      if (q === 'img') return imgs;
+      return [];
+    },
+  };
+}
+
+const POST =
+  'Thrilled to announce that after four incredible years I am moving on to a new role.';
+
+test('LinkedIn selector matches urns anywhere, not just as a prefix', () => {
+  // The ^= version missed every wrapper whose data-id embeds the urn.
+  assert.ok(li.selector.includes('[data-urn*="urn:li:activity"]'));
+  assert.ok(li.selector.includes('[data-id*="urn:li:activity"]'));
+  assert.ok(!li.selector.includes('^="urn:li:activity"'), 'prefix matching is the old bug');
+  assert.ok(li.selector.includes('.scaffold-finite-scroll__content > div'));
+});
+
+test('a post whose commentary class is unrecognised still yields text', () => {
+  // This was the silent drop: no matching text element meant text === '', and
+  // scan() throws away anything with no text and no image.
+  const el = fakeEl({ attrs: { 'data-urn': 'urn:li:activity:7261234567890123456' }, innerText: POST });
+  const item = li.extract(el);
+  assert.equal(item.text, POST);
+  assert.equal(item.id, 'li_7261234567890123456');
+});
+
+test('the urn is found when it is embedded in an aggregate data-id', () => {
+  const el = fakeEl({
+    attrs: { 'data-id': 'urn:li:aggregate:(urn:li:activity:7009988776655443322)' },
+    innerText: POST,
+  });
+  assert.equal(li.extract(el).id, 'li_7009988776655443322');
+});
+
+test('the urn is found on a descendant when the wrapper carries none', () => {
+  const el = fakeEl({
+    innerText: POST,
+    sel: {
+      '[data-urn*="urn:li:activity"]': {
+        getAttribute: () => 'urn:li:activity:7111111111111111111',
+      },
+    },
+  });
+  assert.equal(li.extract(el).id, 'li_7111111111111111111');
+});
+
+test('a post with no urn at all falls back to a content hash, not to nothing', () => {
+  const item = li.extract(fakeEl({ innerText: POST }));
+  assert.ok(item.id.startsWith('h_'));
+  assert.equal(item.text, POST);
+});
+
+test('"…see more" is stripped mid-string, not just at the end', () => {
+  // innerText puts the fold marker in the middle, so an end-anchored regex left
+  // "…see more" sitting in the text we embed.
+  const folded = `Excited to share my news
+
+…see more
+
+42 reactions`;
+  const el = fakeEl({
+    innerText: folded,
+    sel: { [TEXT_SEL]: { innerText: folded, querySelector: () => null } },
+  });
+  assert.equal(li.extract(el).text, 'Excited to share my news 42 reactions');
+});
+
+test('clean collapses the vertical whitespace LinkedIn pads posts with', () => {
+  assert.equal(clean(`  a
+
+  b `), 'a b');
+  assert.equal(clean(''), '');
+  assert.equal(clean(null), '');
+});
+
+test('avatars, company logos and sprite chrome are not treated as post imagery', () => {
+  const el = fakeEl({
+    attrs: { 'data-urn': 'urn:li:activity:1' },
+    innerText: POST,
+    imgs: [
+      img('https://media.licdn.com/dms/image/v2/profile-displayphoto-shrink_100_100/x.jpg'),
+      img('https://media.licdn.com/dms/image/company-logo_100_100/y.png'),
+      img('https://static.licdn.com/aero-v1/sc/h/abc123.svg'),
+      img('https://media.licdn.com/dms/image/v2/D4E22AQ/feedshare-shrink_800/real.jpg'),
+    ],
+  });
+  const item = li.extract(el);
+  assert.deepEqual(item.images, ['https://media.licdn.com/dms/image/v2/D4E22AQ/feedshare-shrink_800/real.jpg']);
+});
+
+test('ad slots and scroll sentinels the wide selector drags in are discarded', () => {
+  assert.deepEqual(li.extract(fakeEl({ innerText: 'Promoted' })), {});
+  assert.deepEqual(li.extract(fakeEl({ innerText: '' })), {});
+});
+
+test('a short post is kept when it carries an image', () => {
+  const el = fakeEl({
+    attrs: { 'data-urn': 'urn:li:activity:2' },
+    innerText: 'We won.',
+    imgs: [img('https://media.licdn.com/dms/image/v2/feedshare/trophy.jpg')],
+  });
+  const item = li.extract(el);
+  assert.equal(item.id, 'li_2');
+  assert.equal(item.images.length, 1);
+});
+
+test('extract caps text so one long post cannot blow the batch payload', () => {
+  const item = li.extract(fakeEl({ attrs: { 'data-urn': 'urn:li:activity:3' }, innerText: 'x'.repeat(5000) }));
+  assert.equal(item.text.length, 1500);
+});
+
+test('LinkedIn returns the same item shape Reddit does', () => {
+  const liItem = li.extract(fakeEl({ attrs: { 'data-urn': 'urn:li:activity:4' }, innerText: POST }));
+  const rItem = ADAPTERS.reddit.extract(
+    fakeEl({ attrs: { id: 't3_abc', 'post-title': POST }, innerText: POST })
+  );
+  assert.deepEqual(Object.keys(liItem).sort(), Object.keys(rItem).sort());
+  assert.equal(rItem.id, 'r_t3_abc');
 });
 
 await new Promise((r) => setTimeout(r, 50));

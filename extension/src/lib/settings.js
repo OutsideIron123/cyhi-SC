@@ -1,4 +1,5 @@
 import { ACTION } from './protocol.js';
+import { BOAST_PLATFORMS } from './boast.js';
 
 const KEY = 'settings';
 
@@ -10,6 +11,15 @@ export const DEFAULT_SETTINGS = {
 
   toxicity: { enabled: true, threshold: 0.7, action: ACTION.BLUR },
   nsfw: { enabled: true, threshold: 0.6, action: ACTION.BLUR },
+  // Scored against BOAST_PHRASES by max cosine similarity. The bar sits higher
+  // than defaultTriggerThreshold because taking the max over 16 phrases is a
+  // far easier test to pass than clearing one phrase.
+  boast: {
+    enabled: true,
+    threshold: 0.42,
+    action: ACTION.COLLAPSE,
+    platforms: [...BOAST_PLATFORMS],
+  },
 
   triggers: [],
   defaultTriggerThreshold: 0.32,
@@ -40,6 +50,7 @@ export function normalize(stored) {
   const s = { ...DEFAULT_SETTINGS, ...(stored || {}) };
   s.toxicity = { ...DEFAULT_SETTINGS.toxicity, ...(stored?.toxicity || {}) };
   s.nsfw = { ...DEFAULT_SETTINGS.nsfw, ...(stored?.nsfw || {}) };
+  s.boast = { ...DEFAULT_SETTINGS.boast, ...(stored?.boast || {}) };
   s.sites = { ...DEFAULT_SETTINGS.sites, ...(stored?.sites || {}) };
   s.triggers = Array.isArray(stored?.triggers)
     ? stored.triggers
@@ -54,6 +65,11 @@ export function normalize(stored) {
     : [];
   s.toxicity.threshold = clamp01(num(s.toxicity.threshold, 0.7));
   s.nsfw.threshold = clamp01(num(s.nsfw.threshold, 0.6));
+  s.boast.threshold = clamp01(num(s.boast.threshold, DEFAULT_SETTINGS.boast.threshold));
+  s.boast.action = s.boast.action || DEFAULT_SETTINGS.boast.action;
+  s.boast.platforms = Array.isArray(s.boast.platforms) && s.boast.platforms.length
+    ? s.boast.platforms.filter((p) => typeof p === 'string' && p)
+    : [...BOAST_PLATFORMS];
   s.blurAmount = Math.max(0, Math.min(40, num(s.blurAmount, 14)));
   s.backendUrl = String(s.backendUrl || '').trim().replace(/\/+$/, '');
   return s;

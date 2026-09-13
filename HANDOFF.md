@@ -1,59 +1,69 @@
 # Handoff - Stardust Crusaders
 
-> Updated 2026-09-12T21:30:48+05:30 by rishikandiraju (session e1356988-0f1, track 3)
+> Updated 2026-09-13T05:42:14+05:30 by rishikandiraju (session 083bf0b5-4f3, track 3)
 > Read this first. The full log is cyhi-logs/session.md.
 
 ## Current state
-READIT extension now speaks app.py's real contract and is pushed to main. Builds clean,
-22/22 tests pass. Verified against the rewritten mock over HTTP; NOT yet verified against
-the real Flask app or re-loaded in Chrome since the rewrite.
+LinkedIn parsing is fixed and a first-class boasting filter ships alongside toxicity and
+NSFW. 56/56 smoke tests pass (was 22). Verified end-to-end against the real app.py with
+toxic-bert + MiniLM + Falconsai loaded - NOT just the mock. Repo now ships ONE extension.
 
 ## Works
-- POST /classify with {posts:[{id,text,image_base64}], toxicity_threshold, similarity_threshold}
-- Server-side trigger vault synced via POST /update-triggers before classify whenever the
-  enabled phrase list changes
-- decide.js reads results[].toxicity.score, .semantic.similarities (keyed by PHRASE),
-  .nsfw.score - scores not the backend's flagged booleans, so sliders still work live
-- Per-trigger thresholds applied client-side; batch-wide similarity_threshold is set to the
-  loosest enabled trigger so the backend pre-filters nothing
-- Images: worker fetches first image per post and base64s it, 6/batch, 3MB cap, URL-cached.
-  Image CDN host permissions added. "Send images for scanning" toggle in the popup.
-- Mock backend rewritten to the identical wire format, now on :8000. Harness emits a
-  data: URL image on every 4th post.
-- Popup shows the loaded toxicity model name, which is how you tell real from mock.
+- LinkedIn adapter rewritten in extension/src/content/adapters.js (new module, extracted
+  from content/index.js so the parsers can be unit tested without a page).
+  Wide-net selector: [data-urn*=], [data-id*=], feed-shared-update-v2, occludable-update,
+  .scaffold-finite-scroll__content > div. Substring, not prefix - ^= missed aggregate
+  data-ids and descendant urns. extract() falls back to the element's own innerText when
+  no commentary class matches, which is what used to make posts vanish: empty text +
+  no image means scan() drops the post.
+- Boast filter: settings.boast {enabled, threshold 0.42, action collapse, platforms:['linkedin']}.
+  16 seed phrases in src/lib/boast.js pushed into app.py's trigger vault via the existing
+  /update-triggers path; score = max cosine similarity over them. REASON.BOAST, its own
+  popup slider (range 0.2-0.75), veil reads "self-promotion".
+- Congratulation veto: "huge congrats to Priya on being promoted" measured 0.589 against
+  the promotion phrases - higher than several genuine brags. Lexical veto in
+  readsAsCongratulation(), applied in decide() over the first 220 chars.
+- Calibrated against the real MiniLM, 28-post hand-built corpus: at 0.42, 14/14 boasts
+  caught, 0 false positives. Perfect plateau runs 0.40-0.44; 0.42 is its midpoint.
+- e2e against app.py: 4 boasts collapsed (0.462-0.832), congratulation allowed, 2 normal
+  posts allowed, toxic post blurred at 0.979, same boast post allowed on X and Reddit.
+- Root adapters/, manifest.json, background.js DELETED. They read data.toxic/data.nsfw,
+  which app.py never returns, so they could never blur anything.
 
 ## Broken
-- Never run against app.py itself. Only the mock.
-- Not reloaded in Chrome since the rewrite - manifest changed (image hosts), so it needs
-  Remove + Load unpacked, not the reload arrow.
-- ZenLayer's background.js at repo root is DEAD CODE against this backend: it reads
-  data.toxic / data.nsfw, which app.py never returns. It can never blur anything.
-- Repo still ships two extensions and two manifests.
+- Not yet loaded in Chrome against a live linkedin.com feed. dist/ is freshly built;
+  needs Remove + Load unpacked from extension/dist.
+- The wide-net selector is calibrated against LinkedIn markup as described, not against a
+  live DOM capture. If posts are missed, the 5s reportNoMatches() diagnostic dumps the
+  real markup to the console - use it rather than guessing.
+- Instagram support is gone with the root extension. It was only ever in the dead tree.
+- The boast corpus is hand-written by one person. It proves separation, not accuracy.
 
 ## Next 3 things
-1. Start app.py on :8000, Remove + Load unpacked from extension/dist, open the harness,
-   confirm blurs with real models. Popup status line should show "toxic-bert", not "MOCK".
-2. Team decision: delete root background.js + manifest.json + adapters, or fold the adapters
-   into ADAPTERS in extension/src/content/index.js. Two extensions cannot both ship.
-3. Ask the organisers how strictly "models you trained yourself" is read. toxic-bert,
-   MiniLM and Falconsai/nsfw are all off-the-shelf; Calibrate.py tunes thresholds, not weights.
+1. Load extension/dist in Chrome, open a real LinkedIn feed, confirm boast posts collapse
+   and the console shows a non-zero matched count.
+2. Sanity-check the boast threshold against real feed posts; the slider is in the popup.
+3. Ask the organisers how strictly "models you trained yourself" is read - toxic-bert,
+   MiniLM and Falconsai are all off-the-shelf.
 
 ## Decisions (and why)
-- Read scores, not the backend's flagged booleans. One decision point in decide.js, and the
-  sliders keep working with no redeploy.
-- Match triggers on phrase text because that is how the backend keys similarities. Renaming
-  a trigger in the popup makes it a different trigger - accepted.
-- Send the loosest enabled threshold as similarity_threshold so per-trigger sensitivity is
-  still possible client-side despite the backend having only one global threshold.
-- Images fetched in the worker, not the content script: page CORS would block most CDNs.
+- Boasting as a first-class category, not seeded user triggers: it needed platform scoping
+  (LinkedIn only) and its own slider, and seeding the trigger list would have polluted it
+  and broken the moment a user cleared their triggers.
+- Action defaults to COLLAPSE, not BLUR: a brag is not harmful, just tiresome, and a
+  blurred card still occupies the same space in the feed.
+- Parsers moved to their own module purely for testability - importing index.js runs
+  detectPlatform() against location and throws outside a page.
+- Veto is lexical, not semantic, because the embedder cannot represent who the subject of
+  a sentence is. No phrase tuning separates "I got promoted" from "you got promoted".
+- Boast phrases go through the existing trigger vault rather than a new endpoint: no
+  backend change needed, so app.py is untouched.
 
 ## Don't retry
-- Chrome match patterns CANNOT contain a port. Use http://localhost/* - it matches any port.
-- Manifest changes need Remove + Load unpacked. The reload arrow is not enough.
-- Do not detect the platform only at document_start; inline page scripts have not run yet.
-- Do not build fake post ids with arithmetic past Number.MAX_SAFE_INTEGER (~9e15).
-- Do not read `flagged` from the backend and call it done - it bakes in the thresholds that
-  were sent, so the popup sliders would appear to do nothing.
-- Do not send image URLs to app.py. It wants base64 and will just record an error.
-- Do not put durable state in the service worker; it dies ~30s idle.
-- Do not demo against scripts/mock-backend.mjs. No models.
+- Do not use ^= for LinkedIn urn attributes. Aggregate data-ids embed the urn mid-string.
+- Do not let extract() return empty text when the commentary class does not match; scan()
+  silently drops those posts and it looks exactly like a selector failure.
+- Do not try to fix the congratulation false positive by editing BOAST_PHRASES. It was
+  tried; the confusion is structural in MiniLM.
+- Do not resurrect root background.js. Its wire format never matched app.py.
+- Do not anchor the "see more" strip to end-of-string; innerText puts it mid-string.

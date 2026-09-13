@@ -1,8 +1,9 @@
 import { ACTION, REASON } from '../lib/protocol.js';
+import { boastAppliesTo, boastScore, readsAsCongratulation } from '../lib/boast.js';
 
 const RANK = { [ACTION.ALLOW]: 0, [ACTION.BLUR]: 1, [ACTION.COLLAPSE]: 2, [ACTION.HIDE]: 3 };
 
-export function decide(row, settings) {
+export function decide(row, settings, platform, text) {
   const toxicity = clamp01(row?.toxicity?.score);
   const nsfw = clamp01(row?.nsfw?.score);
   const similarities = row?.semantic?.similarities || {};
@@ -33,7 +34,35 @@ export function decide(row, settings) {
   }
   if (trigger) reasons.push(REASON.TRIGGER);
 
-  return { id: row.id, action, reasons, toxicity, nsfw, trigger, similarity, degraded: false };
+  // Boasting is scored the same way a trigger is - cosine similarity from the
+  // same embedder - but it is a named category with its own slider, and it only
+  // applies on the platforms it is scoped to (LinkedIn by default).
+  let boast = 0;
+  let boastPhrase = null;
+  if (boastAppliesTo(platform, settings.boast)) {
+    const hit = boastScore(similarities);
+    if (hit) {
+      boast = hit.score;
+      if (boast >= settings.boast.threshold && !readsAsCongratulation(text)) {
+        boastPhrase = hit.phrase;
+        reasons.push(REASON.BOAST);
+        action = strictest(action, settings.boast.action);
+      }
+    }
+  }
+
+  return {
+    id: row.id,
+    action,
+    reasons,
+    toxicity,
+    nsfw,
+    trigger,
+    similarity,
+    boast,
+    boastPhrase,
+    degraded: false,
+  };
 }
 
 function strictest(a, b) {

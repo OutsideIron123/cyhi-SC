@@ -52,6 +52,7 @@ function policySignature(s) {
     s.backendUrl,
     s.toxicity,
     s.nsfw,
+    s.boast,
     (s.triggers || []).map((t) => [t.id, t.phrase, t.threshold, t.action, t.enabled]),
   ]);
 }
