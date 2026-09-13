@@ -1059,6 +1059,42 @@ test('images in a batch are fetched in parallel, not one at a time', async () =>
   );
 });
 
+
+test('LinkedIn text is cut at the social bar, like Instagram already was', () => {
+  // Live-feed regression. The comment thread was being carried into the text we
+  // embed - a stranger's reply scored as the poster's - and it diluted the post
+  // badly enough to matter: measured against the real backend, this card scored
+  // 0.441 with the thread attached and 0.644 without, against a 0.42 bar. A
+  // slightly longer thread pushes a real boast under and it silently passes.
+  const card = [
+    'Priya Sharma',
+    'Priya Sharma \u2022 3rd+',
+    'Helping founders scale engineering teams | Ex-Google | Speaker',
+    '2d \u2022 Edited \u2022 Visible to anyone on or off LinkedIn',
+    'Thrilled to announce that I have been promoted to Senior Engineering Manager!',
+    '\u2026see more',
+    'Activate to view larger image',
+    '247 \u2022 38 comments \u2022 12 reposts',
+    'Like Comment Repost Send',
+    'Load more comments',
+    'Anil Kumar',
+    'Congratulations Priya! Well deserved.',
+    'Reply',
+  ].join(NL);
+  const out = stripLinkedInChrome(card, 'Priya Sharma');
+  assert.equal(out, 'Thrilled to announce that I have been promoted to Senior Engineering Manager!');
+  assert.ok(!/Congratulations Priya/.test(out), "a commenter's words are not the poster's");
+  assert.ok(!/Ex-Google/.test(out), 'the headline still goes');
+  assert.ok(!/Visible to anyone/.test(out), 'the audience chip still goes');
+});
+
+test('a post body containing a bullet is never eaten by the chrome stripper', () => {
+  // The bullet-joined-chrome rule drops a line only when EVERY segment is
+  // chrome, so a real body keeps at least one segment and survives whole.
+  const body = 'Three lessons \u2022 one year in \u2022 what I learned building this';
+  assert.equal(stripLinkedInChrome(body), body);
+});
+
 await new Promise((r) => setTimeout(r, 50));
 test('every platform has a display label', () => {
   for (const p of Object.values(PLATFORM)) {

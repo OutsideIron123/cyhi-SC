@@ -182,9 +182,30 @@ const CHROME_LINE = new RegExp(
     'like|likes?|comment|comments?|repost|reposts?|send|share|save|' +
     'register|apply( now)?|learn more|sign up|download|view\\b.*|' +
     'reaction button state.*|visibility:.*|see more|…\\s*see more|edited|' +
+    // The audience chip on the timestamp row. Written out in full since the
+    // rewrite; "visibility:" only ever matched the older build.
+    'visible to (anyone|connections).*|anyone on or off linkedin|' +
     '[•·]|(1st|2nd|3rd\\+?)|\\d+(st|nd|rd|th)\\+?|' +
     '[\\d,.]+\\s*(k|m)?\\s*(followers?|connections?|reactions?|comments?|reposts?|impressions?)|' +
     '\\d+\\s*[smhdwy]o?(\\s*(ago|[•·]|edited))*' +
+    ')$',
+  'i'
+);
+
+// Where the post ends and the feed furniture begins. Matched against a whole
+// line, and it BREAKS rather than skipping: everything below is reactions,
+// counts and other people's comments, none of which the poster wrote.
+//
+// Deliberately conservative - it must not fire inside a post body. "Load more
+// comments" and a bare reaction count are unambiguous; a line merely containing
+// the word "comment" is not, so only whole-line matches count.
+const LI_TAIL = new RegExp(
+  '^(' +
+    'load more comments|see more comments|most relevant|all comments|' +
+    'add a comment|write a comment|be the first to comment|' +
+    '[\d,.]+\s*(k|m)?\s*(comments?|reposts?|reactions?|likes?)|' +
+    '(like|comment|repost|send)(\s+(like|comment|repost|send))+|' +
+    'activate to view larger image.*|reaction button state.*' +
     ')$',
   'i'
 );
@@ -198,7 +219,27 @@ export function stripLinkedInChrome(text, author = '') {
   for (const raw of String(text || '').split('\n')) {
     // Bullets are glued onto chrome ("• Follow", "• 3rd+") as separators.
     const line = raw.trim().replace(/^[•·]\s*/, '').trim();
+    // Everything from the social bar down is reactions, counts and other
+    // people's comments. The Instagram adapter has always cut here; LinkedIn
+    // did not, so a card with a comment thread carried all of it into the text
+    // we embed. That is a correctness bug on its own - a stranger's reply
+    // scored as the poster's - and it also dilutes the post: MiniLM averages
+    // over the whole string, so a real boast measured 0.641 clean and 0.437
+    // with the thread attached, which is close enough to the 0.42 bar that a
+    // slightly longer thread pushes it under and the post silently passes.
+    if (LI_TAIL.test(line)) break;
     if (!line || CHROME_LINE.test(line)) continue;
+    // innerText glues the whole timestamp row into one line:
+    // "2d • Edited • Visible to anyone on or off LinkedIn". No single arm of
+    // CHROME_LINE matches that, so it survived as post text.
+    //
+    // Drop a line only when EVERY bullet-separated segment is chrome. A real
+    // post body containing a bullet keeps at least one segment that is not, so
+    // this can never eat something the poster wrote.
+    if (line.includes('•') || line.includes('·')) {
+      const segments = line.split(/[•·]/).map((s) => s.trim()).filter(Boolean);
+      if (segments.length > 1 && segments.every((s) => CHROME_LINE.test(s))) continue;
+    }
     if (author && line.replace(/\s*[•·].*$/, '').trim() === author) {
       headlineAt = lines.length;
       continue;
