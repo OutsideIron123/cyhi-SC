@@ -1,3 +1,4 @@
+import '../lib/browser-compat.js';
 import { MSG } from '../lib/protocol.js';
 import { getSettings, saveSettings, resetSettings, DEFAULT_SETTINGS } from '../lib/settings.js';
 import { getEvents, clearEvents, markRevealed } from '../lib/events.js';

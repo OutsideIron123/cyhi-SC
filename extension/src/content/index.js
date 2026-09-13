@@ -1,3 +1,4 @@
+import '../lib/browser-compat.js';
 import { ACTION, REASON } from '../lib/protocol.js';
 import { getSettings, onSettingsChanged } from '../lib/settings.js';
 import { rpc, ContextInvalidated } from '../lib/rpc.js';
