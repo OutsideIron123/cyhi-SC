@@ -1,0 +1,13 @@
+# ZenLayer backend — pinned dependencies.
+# NOTE: --extra-index-url must be on its own line. pip silently ignores it when
+# appended to a requirement line, which would pull the ~2GB CUDA torch wheel.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+flask==3.0.3
+flask-cors==4.0.1
+torch>=2.2,<2.6.
+transformers==4.41.2
+sentence-transformers==3.0.1
+pillow==10.3.0
+scipy==1.13.1
+numpy==1.26.4
