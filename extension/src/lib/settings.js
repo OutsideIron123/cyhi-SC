@@ -29,7 +29,7 @@ export const DEFAULT_SETTINGS = {
   showReason: true,
   logEvents: true,
 
-  sites: { x: true, reddit: true, linkedin: true },
+  sites: { x: true, reddit: true, linkedin: true, instagram: true },
 };
 
 export function newTriggerId() {

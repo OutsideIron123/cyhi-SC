@@ -7,7 +7,17 @@ import { mockEvents } from '../src/lib/mock.js';
 import { normalize, DEFAULT_SETTINGS } from '../src/lib/settings.js';
 import { ACTION, REASON, PLATFORM, PLATFORM_LABELS } from '../src/lib/protocol.js';
 import { BOAST_PHRASES, readsAsCongratulation } from '../src/lib/boast.js';
-import { ADAPTERS, clean, stripLinkedInChrome, authorOf } from '../src/content/adapters.js';
+import {
+  ADAPTERS,
+  clean,
+  stripLinkedInChrome,
+  authorOf,
+  instagramAuthorOf,
+  instagramShortcode,
+  instagramAltText,
+  instagramMedia,
+  stripInstagramChrome,
+} from '../src/content/adapters.js';
 
 let passed = 0;
 const test = (name, fn) => {
@@ -572,6 +582,280 @@ test('LinkedIn returns the same item shape Reddit does', () => {
   assert.equal(rItem.id, 'r_t3_abc');
 });
 
+
+// --- Instagram parser -----------------------------------------------------
+// Instagram has no caption element to target - every class is a rotating hash -
+// so extract() works off innerText, the permalink href and the avatar alt. The
+// stub answers the handful of selectors it actually asks for.
+
+const ig = ADAPTERS.instagram;
+
+function igEl({ innerText = '', href = null, links = [], imgs = [], videos = [] } = {}) {
+  return {
+    innerText,
+    textContent: innerText,
+    getAttribute: (k) => (k === 'href' ? href : null),
+    querySelector(q) {
+      if (q.includes('cf-veil')) return null;
+      if (q.includes('profile picture')) {
+        return imgs.find((i) => /profile picture/i.test(i.alt || '')) || null;
+      }
+      if (q === 'img') return imgs[0] || null;
+      return null;
+    },
+    querySelectorAll(q) {
+      if (q === 'img') return imgs;
+      if (q === 'video') return videos;
+      if (q.includes('/p/')) return links;
+      return [];
+    },
+  };
+}
+
+const igImg = (src, alt = '') => ({
+  src,
+  currentSrc: '',
+  alt,
+  getAttribute: (k) => (k === 'alt' ? alt : null),
+});
+const igLink = (href) => ({ getAttribute: (k) => (k === 'href' ? href : null) });
+const igVideo = (poster) => ({ getAttribute: (k) => (k === 'poster' ? poster : null) });
+
+const CDN = 'https://scontent.cdninstagram.com/v/t51/';
+const AVATAR = `${CDN}s150x150/avatar.jpg`;
+
+// What innerText actually gives you for one feed card, chrome and all.
+const IG_CARD = [
+  'jane_doe',
+  '•',
+  'Follow',
+  '2d',
+  'jane_doe honestly everyone in this thread is an idiot and I hate all of you',
+  '… more',
+  'Liked by someone_else and 1,204 others',
+  'View all 42 comments',
+  'mark_b totally agree with this',
+  'Add a comment…',
+].join(NL);
+
+test('Instagram selector targets the article, not a hashed class', () => {
+  assert.ok(ig.selector.includes('main article'));
+  assert.ok(!/_a[a-z0-9]{3}/.test(ig.selector), 'hashed classes rotate; never match on one');
+  assert.deepEqual(ig.hosts, ['instagram.com', 'www.instagram.com']);
+});
+
+test('the shortcode in the permalink is the post id', () => {
+  const item = ig.extract(
+    igEl({
+      innerText: IG_CARD,
+      links: [igLink('/jane_doe/p/C8xYz-123_ab/')],
+      imgs: [igImg(`${CDN}post.jpg`, 'Photo by jane')],
+    })
+  );
+  assert.equal(item.id, 'ig_C8xYz-123_ab');
+});
+
+test('reels and igtv permalinks yield an id too', () => {
+  assert.equal(instagramShortcode(igEl({ links: [igLink('/reel/DA1b2C3d4E5/')] })), 'DA1b2C3d4E5');
+  assert.equal(instagramShortcode(igEl({ links: [igLink('/tv/BxYz9/')] })), 'BxYz9');
+  assert.equal(
+    instagramShortcode(igEl({ href: 'https://www.instagram.com/p/CQQQ1/?img_index=2' })),
+    'CQQQ1'
+  );
+});
+
+test('a card with no permalink falls back to a platform-scoped content hash', () => {
+  const item = ig.extract(igEl({ innerText: IG_CARD, imgs: [igImg(`${CDN}post.jpg`)] }));
+  // Bare content hashes collide across platforms and would share a cached verdict.
+  assert.ok(item.id.startsWith('ig_h_'), item.id);
+});
+
+test('the caption survives and the feed chrome does not', () => {
+  const item = ig.extract(
+    igEl({ innerText: IG_CARD, links: [igLink('/p/C1/')], imgs: [igImg(`${CDN}post.jpg`)] })
+  );
+  assert.equal(item.text, 'honestly everyone in this thread is an idiot and I hate all of you');
+});
+
+test('comment previews are cut off, not scored as the poster', () => {
+  // A stranger's reply under a clean post used to be read as the post itself.
+  const text = stripInstagramChrome(
+    [
+      'jane_doe',
+      'Follow',
+      '2d',
+      'jane_doe sunset from the lab',
+      'View all 42 comments',
+      'mark_b you are worthless and nobody would miss you',
+    ].join(NL),
+    'jane_doe'
+  );
+  assert.equal(text, 'sunset from the lab');
+});
+
+test('the username prefix on the caption line is stripped', () => {
+  assert.equal(
+    stripInstagramChrome(['jane_doe', 'jane_doe look at this'].join(NL), 'jane_doe'),
+    'look at this'
+  );
+  // ...but a caption that merely starts with a similar word keeps it.
+  assert.equal(
+    stripInstagramChrome(['jane_doe', 'janes are great'].join(NL), 'jane_doe'),
+    'janes are great'
+  );
+});
+
+test('"see more" is stripped from the fold, both as its own line and trailing', () => {
+  assert.equal(stripInstagramChrome(['a real caption here', '… more'].join(NL)), 'a real caption here');
+  assert.equal(stripInstagramChrome('a real caption here… more'), 'a real caption here');
+});
+
+test('the username is inferred when the avatar has not loaded its alt yet', () => {
+  // No avatar to read the author off, but the header line and the caption line
+  // both open with the same token - which is what a username is.
+  assert.equal(
+    stripInstagramChrome(['jane_doe', '2d', 'jane_doe look at this'].join(NL)),
+    'look at this'
+  );
+  // Two unrelated lines must not be mistaken for a header plus its caption.
+  assert.equal(
+    stripInstagramChrome(['headline', 'a completely different sentence'].join(NL)),
+    'headline a completely different sentence'
+  );
+});
+
+test('the header survives innerText collapsing it onto one line', () => {
+  // Captured from a real DOM, not assumed: innerText renders the actor row as
+  // "jane_doe · Follow · 2d", so the username has to be taken off the front of
+  // that line rather than expected to be a line of its own.
+  const real = [
+    ' jane_doe · Follow · 2d',
+    'jane_doe honestly everyone in this thread is an idiot and I hate all of you',
+    '… more',
+    'Liked by someone and 1,204 others',
+    '2D',
+    'View all 42 comments',
+    'hostile_commenter you are worthless and nobody would miss you',
+    'Add a comment…',
+  ].join(NL);
+  const expected = 'honestly everyone in this thread is an idiot and I hate all of you';
+  assert.equal(stripInstagramChrome(real, 'jane_doe'), expected, 'avatar alt available');
+  assert.equal(stripInstagramChrome(real), expected, 'avatar still lazy-loading');
+});
+
+test('the author comes off the avatar alt, which survives class hashing', () => {
+  const el = igEl({ imgs: [igImg(AVATAR, "jane_doe's profile picture")] });
+  assert.equal(instagramAuthorOf(el), 'jane_doe');
+  assert.equal(instagramAuthorOf(igEl({})), '');
+});
+
+test('avatars and sprites are not sent to the NSFW model', () => {
+  const media = instagramMedia(
+    igEl({
+      imgs: [
+        igImg(AVATAR, "jane_doe's profile picture"),
+        igImg('https://static.cdninstagram.com/rsrc.php/v3/icon.png'),
+        igImg(`${CDN}post.jpg`, 'Photo by jane_doe on June 08, 2024.'),
+      ],
+    })
+  );
+  assert.deepEqual(media, [`${CDN}post.jpg`]);
+});
+
+test('data: images go through, but blob and relative srcs do not', () => {
+  // images.js decodes a data: URI without a fetch, and it is the only image the
+  // test harness can produce. blob: has no meaning in the service worker.
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAA';
+  assert.deepEqual(instagramMedia(igEl({ imgs: [igImg(PNG)] })), [PNG]);
+  assert.deepEqual(instagramMedia(igEl({ imgs: [igImg('blob:https://instagram.com/abc')] })), []);
+  assert.deepEqual(instagramMedia(igEl({ imgs: [igImg('/static/x.png')] })), []);
+});
+
+test('a reel has no readable frames, so its poster stands in for the video', () => {
+  const media = instagramMedia(igEl({ videos: [igVideo(`${CDN}poster.jpg`)] }));
+  assert.deepEqual(media, [`${CDN}poster.jpg`]);
+});
+
+test('an image-only post falls back to the generated alt text', () => {
+  // The whole post is a meme; the words are in the picture, and Instagram's own
+  // alt is the only place they exist as text.
+  const item = ig.extract(
+    igEl({
+      innerText: ['jane_doe', 'Follow', '3h', 'Liked by bob and 12 others'].join(NL),
+      links: [igLink('/p/C2/')],
+      imgs: [
+        igImg(AVATAR, "jane_doe's profile picture"),
+        igImg(
+          `${CDN}meme.jpg`,
+          "Photo by jane_doe on June 08, 2024. May be an image of text that says 'everyone here is trash'."
+        ),
+      ],
+    })
+  );
+  assert.equal(item.text, "text that says 'everyone here is trash'.");
+  assert.deepEqual(item.images, [`${CDN}meme.jpg`]);
+});
+
+test('alt text is not used when there is a real caption', () => {
+  const item = ig.extract(
+    igEl({
+      innerText: IG_CARD,
+      links: [igLink('/p/C3/')],
+      imgs: [igImg(`${CDN}post.jpg`, 'Photo by jane on June 08, 2024. May be an image of one person.')],
+    })
+  );
+  assert.ok(!item.text.includes('one person'), item.text);
+});
+
+test('a story tray or empty sentinel is dropped, not sent to the backend', () => {
+  assert.deepEqual(ig.extract(igEl({ innerText: '' })), {});
+  assert.deepEqual(ig.extract(igEl({ innerText: 'Suggested for you' })), {});
+  assert.deepEqual(ig.extract(igEl({ innerText: 'Follow' })), {});
+});
+
+test('an image post with a short caption still goes through', () => {
+  // A length gate alone would drop this; on an image feed almost every real
+  // post is a short caption plus a picture.
+  const item = ig.extract(
+    igEl({ innerText: 'jane_doe nice', links: [igLink('/p/C4/')], imgs: [igImg(`${CDN}a.jpg`)] })
+  );
+  assert.equal(item.id, 'ig_C4');
+  assert.equal(item.images.length, 1);
+});
+
+test('Instagram captions are capped like every other platform', () => {
+  const item = ig.extract(igEl({ innerText: 'x'.repeat(5000), links: [igLink('/p/C5/')] }));
+  assert.equal(item.text.length, 1500);
+});
+
+test('the same post seen twice hashes to the same id (virtualised feed)', () => {
+  const a = ig.extract(igEl({ innerText: IG_CARD, imgs: [igImg(`${CDN}post.jpg`)] })).id;
+  const b = ig.extract(igEl({ innerText: IG_CARD, imgs: [igImg(`${CDN}post.jpg`)] })).id;
+  assert.equal(a, b);
+});
+
+test('the alt prefix stripper leaves nothing useful behind on boilerplate', () => {
+  assert.equal(
+    instagramAltText(igEl({ imgs: [igImg(`${CDN}a.jpg`, 'Photo by jane_doe on June 08, 2024.')] })),
+    ''
+  );
+  assert.equal(instagramAltText(igEl({ imgs: [igImg(AVATAR, "jane_doe's profile picture")] })), '');
+});
+
+test('boasting stays off Instagram - it is scoped to LinkedIn', () => {
+  const v = decide(boastRow(0.99), base, PLATFORM.INSTAGRAM);
+  assert.equal(v.action, ACTION.ALLOW);
+  assert.ok(!v.reasons.includes(REASON.BOAST));
+});
+
+test('toxicity and NSFW do apply on Instagram', () => {
+  assert.equal(
+    decide(row({ toxicity: { score: 0.9 } }), base, PLATFORM.INSTAGRAM).action,
+    ACTION.BLUR
+  );
+  assert.equal(decide(row({ nsfw: { score: 0.9 } }), base, PLATFORM.INSTAGRAM).action, ACTION.BLUR);
+});
+
 await new Promise((r) => setTimeout(r, 50));
 test('every platform has a display label', () => {
   for (const p of Object.values(PLATFORM)) {
@@ -582,15 +866,16 @@ test('every platform has a display label', () => {
 test('linkedin is on by default and normalize keeps site toggles', () => {
   const s = normalize({});
   assert.equal(s.sites.linkedin, true);
+  assert.equal(s.sites.instagram, true, 'a new platform must default to on');
   const off = normalize({ sites: { linkedin: false } });
   assert.equal(off.sites.linkedin, false);
   assert.equal(off.sites.x, true, 'untouched sites keep their default');
 });
 
-test('summarize splits by all three platforms', () => {
+test('summarize splits by every platform we ship an adapter for', () => {
   const s = summarize(mockEvents({ count: 300, minutes: 60 }));
   const seen = Object.keys(s.byPlatform).sort();
-  assert.deepEqual(seen, ['linkedin', 'reddit', 'x'], `got ${seen}`);
+  assert.deepEqual(seen, ['instagram', 'linkedin', 'reddit', 'x'], `got ${seen}`);
   assert.equal(
     Object.values(s.byPlatform).reduce((a, b) => a + b, 0),
     s.total,

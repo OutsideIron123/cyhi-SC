@@ -58,7 +58,7 @@ export default function App() {
 
       {isMock && events.length === 0 && (
         <p className="banner">
-          No real events yet — scroll X, Reddit or LinkedIn with the extension on and this fills in live.
+          No real events yet — scroll X, Reddit, LinkedIn or Instagram with the extension on and this fills in live.
           Showing sample data meanwhile.
         </p>
       )}

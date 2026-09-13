@@ -12,10 +12,13 @@ export function mockEvents({ count = 240, minutes = 60, seed = 7 } = {}) {
     const t = now - span + Math.floor(span * progress) + Math.floor(rand() * 4000);
     const heat = 0.25 + progress * 0.45;
     const tox = clamp01(betaish(rand, heat));
-    const nsf = clamp01(betaish(rand, 0.28));
     const sim = clamp01(betaish(rand, 0.3));
 
     const platform = pickPlatform(rand());
+    // Instagram is an image feed, so NSFW is the reason that actually fires
+    // there; on a text feed it is mostly noise. Modelling one rate for all four
+    // platforms made the dashboard's per-platform split meaningless.
+    const nsf = clamp01(betaish(rand, platform === PLATFORM.INSTAGRAM ? 0.44 : 0.28));
     // Boasting only ever scores on LinkedIn, so the sample data has to model it
     // that way or the dashboard's Boasting bar sits at zero forever.
     const bst = platform === PLATFORM.LINKEDIN ? clamp01(betaish(rand, 0.36)) : 0;
@@ -51,7 +54,7 @@ export function mockEvents({ count = 240, minutes = 60, seed = 7 } = {}) {
 }
 
 const pickPlatform = (r) =>
-  r < 0.45 ? PLATFORM.X : r < 0.8 ? PLATFORM.REDDIT : PLATFORM.LINKEDIN;
+  r < 0.36 ? PLATFORM.X : r < 0.64 ? PLATFORM.REDDIT : r < 0.84 ? PLATFORM.LINKEDIN : PLATFORM.INSTAGRAM;
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const round2 = (n) => Math.round(n * 100) / 100;

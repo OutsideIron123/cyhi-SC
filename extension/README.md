@@ -117,24 +117,47 @@ A model crash must never blank the feed.
 
 ## Supported platforms
 
-X, Reddit and LinkedIn. Each is one entry in `ADAPTERS` at the top of
-`src/content/index.js`: a host list, a CSS selector and an `extract(el)` that
-returns `{ id, text, images }`. Nothing below that block is platform-specific,
-so a fourth site is one object.
+X, Reddit, LinkedIn and Instagram. Each is one entry in `ADAPTERS` in
+`src/content/adapters.js`: a host list, a CSS selector and an `extract(el)` that
+returns `{ id, text, images }`. Nothing outside that module is
+platform-specific, so a fifth site is one object plus a `PLATFORM` constant, a
+label, a `sites` default and the manifest match.
 
 `scan()` skips any post that has a matching ancestor. LinkedIn reshares and X
 quote-tweets both nest a post inside a post, and without that guard the inner
 one is scored separately and blurs on its own.
 
-**LinkedIn selectors are the least stable of the three.** The feed is heavily
+**LinkedIn and Instagram selectors are the least stable.** The feed is heavily
 A/B tested and class names change; `.feed-shared-update-v2`,
 `.update-components-text` and the `urn:li:activity` attribute are the current
 hooks, with fallbacks. If LinkedIn silently stops blurring, check those first —
 the console line `[READIT] content script active on linkedin` tells you the
 script is injected and the problem is extraction, not plumbing.
 
-Post ids are prefixed per platform: `x_`, `r_`, `li_`, or `h_` for the text-hash
-fallback where a site gives no stable id.
+Instagram hashes every class, so its adapter matches on `main article` and
+reads everything else off attributes that survive: the `/p/<shortcode>/`
+permalink is the post id, the avatar's `alt="<user>'s profile picture"` is the
+author, and the caption is recovered from the card's own `innerText` with the
+chrome stripped. Two Instagram-specific rules are load-bearing:
+
+- **innerText is cut at "View all N comments".** Below that line is other
+  people's writing; scoring it as the poster's is how a clean post gets veiled
+  for somebody else's abusive reply.
+- **Image-only posts fall back to Instagram's generated alt text.** On a meme
+  ("May be an image of text that says '...'") that alt is the only place the
+  words in the picture exist as text. It is used only when no caption survives,
+  so it never dilutes a real one.
+
+Boasting stays scoped to LinkedIn. On an image feed it would mostly catch
+ordinary good news; toxicity and NSFW are what actually fire on Instagram, and
+NSFW is the reason it matters most there — see `instagramMedia()`, which drops
+avatars (`s150x150`) and sprites (`/rsrc.php/`) and substitutes a reel's
+`poster` for the video it cannot read.
+
+Post ids are prefixed per platform: `x_`, `r_`, `li_`, `ig_`, or `h_` for the
+text-hash fallback where a site gives no stable id. The prefix is not cosmetic:
+two identical captions on different platforms would otherwise collide in the
+verdict cache.
 
 ## Calibrating trigger sensitivity
 

@@ -38,7 +38,7 @@
       <header>
         <h1>Bridge test harness</h1>
         <p class="sub">
-          Fake posts in real X / Reddit DOM shapes. This proves the extension pipeline —
+          Fake posts in real X / Reddit / LinkedIn / Instagram DOM shapes. This proves the pipeline —
           extraction → batching → backend → verdict → blur → event log — without needing
           a logged-in timeline or correct production selectors.
         </p>
@@ -47,6 +47,7 @@
             <option value="x">X shape</option>
             <option value="reddit">Reddit shape</option>
             <option value="linkedin">LinkedIn shape</option>
+            <option value="instagram">Instagram shape</option>
           </select>
           <button id="more">Append 8 posts (tests MutationObserver)</button>
           <button id="burst">Burst 40 (tests batching)</button>
@@ -54,7 +55,7 @@
         </div>
         <p class="sub" id="count"></p>
       </header>
-      <div id="feed"></div>
+      <main id="feed"></main>
     </div>
 
     <script>
@@ -117,6 +118,27 @@
             <div class="handle">Test Person <span>· 1st · now</span></div>
             <div class="update-components-text">${text}</div>
             ${photo}`;
+          return el;
+        }
+        if (platform === 'instagram') {
+          // innerText order matters here: the adapter recovers the caption from
+          // it, strips the chrome, and cuts everything below "View all N
+          // comments" so a commenter's words are never scored as the poster's.
+          const el = document.createElement('article');
+          el.setAttribute('role', 'presentation');
+          el.innerHTML = `
+            <div class="handle">
+              <img src="${PIXEL}" alt="test_user_${id}'s profile picture" width="24" height="24" />
+              test_user_${id} <span>\u00b7 Follow \u00b7 2d</span>
+            </div>
+            <img src="${PIXEL}" alt="Photo by test_user_${id} on June 08, 2024." width="160" height="120" />
+            <div>test_user_${id} ${text}</div>
+            <div>\u2026 more</div>
+            <div>Liked by someone and 1,204 others</div>
+            <a href="/test_user_${id}/p/C${1000000 + id}xYz/" class="tag">2d</a>
+            <div>View all 42 comments</div>
+            <div>hostile_commenter you are worthless and nobody would miss you</div>
+            <div>Add a comment\u2026</div>`;
           return el;
         }
         if (platform === 'reddit') {

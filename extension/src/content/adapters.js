@@ -109,6 +109,47 @@ export const ADAPTERS = {
       return { id: activity ? `li_${activity}` : `li_${fallbackId(el, text)}`, text, images };
     },
   },
+  [PLATFORM.INSTAGRAM]: {
+    hosts: ['instagram.com', 'www.instagram.com'],
+    // Instagram hashes every class the same way LinkedIn's new build does, so
+    // the only durable handles are the element type, ARIA, and the permalink
+    // href. `article` is the feed card and has been for years; the extra arms
+    // cover the reel viewer and the profile/explore grid, where there is no
+    // article element at all.
+    selector: [
+      'main article',
+      'article[role="presentation"]',
+      'section main article',
+      'main div[data-media-id]',
+      'a[href*="/p/"][role="link"][tabindex]',
+    ].join(', '),
+    extract(el) {
+      const own = ownText(el);
+      const media = instagramMedia(el);
+      // The feed is padded with story trays, "suggested for you" rails and
+      // empty virtualiser sentinels. A real post has media; a text-only card
+      // has to be long enough to be worth a round trip.
+      if (!media.length && own.length < 40) return {};
+
+      const shortcode = instagramShortcode(el);
+      const author = instagramAuthorOf(el);
+      // No caption element survives the class hashing, so the caption is
+      // recovered from the card's own innerText. That matters beyond tidiness:
+      // innerText also carries the comment previews, and scoring a stranger's
+      // comment as if the poster wrote it is how a clean post gets veiled.
+      let text = stripInstagramChrome(own, author);
+      // Image-only posts are the norm here, not the exception. Instagram's own
+      // generated alt text ("May be an image of text that says ...") is the
+      // only text such a post has, and on a meme it is the words in the image.
+      if (text.length < 12) text = clean([text, instagramAltText(el)].filter(Boolean).join(' '));
+
+      return {
+        id: shortcode ? `ig_${shortcode}` : `ig_${fallbackId(el, text)}`,
+        text: text.slice(0, 1500),
+        images: media,
+      };
+    },
+  },
 };
 
 // innerText minus anything this extension itself painted on, so a re-scan of an
@@ -195,4 +236,143 @@ function fallbackId(el, text) {
     h = Math.imul(h, 16777619);
   }
   return `h_${(h >>> 0).toString(36)}`;
+}
+
+// --- Instagram ------------------------------------------------------------
+
+// The permalink on the timestamp is the one stable identity a feed card has:
+// /p/<shortcode>/ for posts, /reel/ and /tv/ for video. Everything else about
+// the card - classes, wrapper depth, attribute names - rotates.
+export function instagramShortcode(el) {
+  const links = [
+    el.getAttribute?.('href') ? el : null,
+    ...(el.querySelectorAll?.('a[href*="/p/"], a[href*="/reel/"], a[href*="/tv/"]') || []),
+  ].filter(Boolean);
+  for (const a of links) {
+    const m = (a.getAttribute('href') || '').match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+    if (m) return m[1];
+  }
+  return '';
+}
+
+// Avatars carry alt="<username>'s profile picture" - the one per-post handle on
+// the author that survives class hashing, and the same trick the LinkedIn
+// adapter plays with the control-menu aria-label.
+export function instagramAuthorOf(el) {
+  const alt =
+    el.querySelector?.('img[alt$="profile picture"], img[alt*="profile picture"]')?.getAttribute('alt') ||
+    '';
+  return alt.replace(/['\u2019]s profile picture$/i, '').trim();
+}
+
+// Avatars are served at s150x150 and sprites come off /rsrc.php/. Neither is
+// post imagery, and sending them to the NSFW model wastes a fetch per card.
+//
+// data: URIs are allowed through because images.js decodes them without a
+// network round trip, and because it is the only way the test harness can
+// exercise the NSFW path at all - the LinkedIn adapter's http-only filter is
+// why harness images never reach the model there.
+function isInstagramChrome(src) {
+  return (
+    !src ||
+    !/^(https?:|data:)/.test(src) ||
+    src.includes('/rsrc.php/') ||
+    /\/s(32|64|150)x(32|64|150)\//.test(src)
+  );
+}
+
+export function instagramMedia(el) {
+  const out = [];
+  for (const img of el.querySelectorAll?.('img') || []) {
+    if (/profile picture/i.test(img.getAttribute?.('alt') || '')) continue;
+    const src = img.currentSrc || img.src;
+    if (!isInstagramChrome(src)) out.push(src);
+  }
+  // A reel renders as <video>, whose frames we cannot read - but its poster is
+  // a still of the same content and is exactly what the NSFW model wants.
+  for (const v of el.querySelectorAll?.('video') || []) {
+    const poster = v.getAttribute?.('poster');
+    if (!isInstagramChrome(poster)) out.push(poster);
+  }
+  return [...new Set(out)];
+}
+
+// Instagram generates alt text of the form
+//   "Photo by Jane on June 08, 2024. May be an image of text that says 'GO AWAY'."
+// The prefix is boilerplate; what follows is a scene description, and on a meme
+// it is the words baked into the image - the only text the post has.
+export function instagramAltText(el) {
+  for (const img of el.querySelectorAll?.('img') || []) {
+    const alt = (img.getAttribute?.('alt') || '').trim();
+    if (!alt || /profile picture/i.test(alt)) continue;
+    const body = alt
+      .replace(/^(photo|video|image) (shared )?by .*? on [^.]*\.\s*/i, '')
+      .replace(/^may be an? (image|illustration|graphic|meme|close-up|cartoon|drawing)( of)?\s*/i, '')
+      .trim();
+    if (body.length >= 8) return clean(body);
+  }
+  return '';
+}
+
+// Feed furniture on an Instagram card: the actor row, the like/comment bar, the
+// audio credit, and the fold marker. innerText picks all of it up as lines.
+const IG_CHROME_LINE = new RegExp(
+  '^(' +
+    'follow(ing|s| back)?|sponsored|paid partnership.*|verified|suggested for you|' +
+    'original audio|.*[\u00b7\u2022]\\s*original audio|audio|' +
+    'like|likes?|comment|comments?|share|save|reply|translate|see translation|' +
+    'more|\u2026\\s*more|less|edited|turn on post notifications|' +
+    'view profile|message|subscribe|contact|' +
+    '[\u2022\u00b7]|' +
+    'liked by .*|[\\d,.]+\\s*(k|m)?\\s*(likes?|views?|plays?|comments?|followers?)|' +
+    '\\d+\\s*[smhdw]|\\d+\\s*(seconds?|minutes?|hours?|days?|weeks?)(\\s*ago)?' +
+    ')$',
+  'i'
+);
+
+// Everything from here down is other people's writing. Scoring it as the
+// poster's is how a perfectly clean post ends up veiled for a toxic reply.
+const IG_COMMENTS_START =
+  /^(view (all )?([\d,.]+ )?comments?|view all comments|add a comment|[\d,.]+ replies|see more comments)/i;
+
+export function stripInstagramChrome(text, author = '') {
+  const lines = [];
+  for (const raw of String(text || '').split('\n')) {
+    const line = raw.trim().replace(/^[\u2022\u00b7]\s*/, '').trim();
+    if (!line) continue;
+    if (IG_COMMENTS_START.test(line)) break;
+    if (IG_CHROME_LINE.test(line)) continue;
+    if (author && line.replace(/\s*[\u2022\u00b7].*$/, '').trim() === author) continue;
+    lines.push(line);
+  }
+
+  // Avatars are lazy-loaded, so on a card that has only just scrolled in there
+  // is no alt to read the author off. The username is still structurally
+  // identifiable: it opens the header line, and the caption line underneath
+  // opens with the very same token. innerText gives the header as one line
+  // ("jane_doe · Follow · 2d"), so the candidate is what precedes the bullet.
+  if (!author && lines.length >= 2) {
+    const cand = lines[0].split(/[•·]/)[0].trim();
+    if (
+      cand &&
+      cand.length <= 30 &&
+      !/\s/.test(cand) &&
+      lines.slice(1).some((l) => l.toLowerCase().startsWith(cand.toLowerCase() + ' '))
+    ) {
+      author = cand;
+      lines.shift();
+    }
+  }
+
+  let out = lines.join(' ');
+  // The caption line repeats the username as its first token ("jane_doe look at
+  // this"). Left in, it is a proper noun the embedder has to explain away.
+  if (author) {
+    out = out.replace(new RegExp('^' + escapeRe(author) + '\\s+(?=\\S)', 'i'), '');
+  }
+  return clean(out.replace(/\s*\u2026?\s*\bmore\b\s*$/i, ''));
+}
+
+function escapeRe(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -28,12 +28,14 @@ export const PLATFORM = {
   X: 'x',
   REDDIT: 'reddit',
   LINKEDIN: 'linkedin',
+  INSTAGRAM: 'instagram',
 };
 
 export const PLATFORM_LABELS = {
   [PLATFORM.X]: 'X',
   [PLATFORM.REDDIT]: 'Reddit',
   [PLATFORM.LINKEDIN]: 'LinkedIn',
+  [PLATFORM.INSTAGRAM]: 'Instagram',
 };
 
 export function allowVerdict(id, degraded = false) {

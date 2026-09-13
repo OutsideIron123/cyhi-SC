@@ -244,7 +244,7 @@ function PageReport({ page }) {
     return (
       <p className="pagereport bad">
         No page report yet. The content script has not run on any supported site
-        since the extension was loaded. Open X, Reddit or LinkedIn and refresh the tab.
+        since the extension was loaded. Open X, Reddit, LinkedIn or Instagram and refresh the tab.
       </p>
     );
   }
