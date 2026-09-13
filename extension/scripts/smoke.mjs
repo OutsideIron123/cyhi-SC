@@ -1042,7 +1042,9 @@ test('an unknown category is a throw, not a silent mid', () => {
 test('images in a batch are fetched in parallel, not one at a time', async () => {
   // Six images against a 5s timeout, awaited in a for loop, serialised the whole
   // batch behind the slowest CDN for work that is pure network wait.
-  const DELAY = 60;
+  // Kept well under the 50ms settle at the end of this file, or the async
+  // result lands after the final tally and the test silently stops counting.
+  const DELAY = 15;
   const N = 6;
   const fake = () => new Promise((r) => setTimeout(() => r('x'), DELAY));
 
