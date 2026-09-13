@@ -49,36 +49,6 @@ const CONGRATULATION =
 // wearing a different hat.
 const CONGRATULATING_SELF = /\bcongrat\w*\s+(to\s+)?(me\b|myself|us\b|our team)/i;
 
-// The LinkedIn announcement formula, which is lexical and almost invariant:
-// an emotion word, then a telling verb, in the opening line. "Thrilled to
-// announce", "humbled to share", "excited to share some personal news".
-//
-// This exists because the embedding score is length-sensitive - MiniLM averages
-// over the whole post, so the longer the story around the brag the lower it
-// scores. Measured against the live backend: the same announcement is 0.668 in
-// one line and 0.526 wrapped in a paragraph of reflection, and a humblebrag
-// lands at 0.447 against a 0.42 bar. All pass, but only just, and a longer post
-// eventually slips under.
-//
-// A brag that opens this way is a brag at any length, so treat the opener as
-// sufficient on its own rather than hoping the average holds up.
-const BOAST_OPENER = new RegExp(
-  '\\b(thrilled|excited|delighted|happy|proud|humbled|honou?red|grateful|blessed|pleased|stoked)\\b' +
-    '[^.!?]{0,40}?\\bto\\s+(announce|share|say|reveal|report)\\b',
-  'i'
-);
-
-// ...and the bare-superlative variant, which skips the emotion word entirely:
-// "Beyond grateful", "Big news!", "Some personal news".
-const BOAST_NEWS = /\b(big|exciting|personal|great)\s+news\b/i;
-
-export function readsAsBoastAnnouncement(text) {
-  // Only the opening matters. A post that mentions being thrilled in its last
-  // paragraph is not announcing anything.
-  const head = String(text || '').slice(0, 200);
-  return BOAST_OPENER.test(head) || BOAST_NEWS.test(head);
-}
-
 export function readsAsCongratulation(text) {
   // Only the opening matters: a brag that thanks well-wishers in its last line
   // is still a brag.
