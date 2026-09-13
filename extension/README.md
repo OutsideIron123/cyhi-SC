@@ -154,6 +154,23 @@ NSFW is the reason it matters most there — see `instagramMedia()`, which drops
 avatars (`s150x150`) and sprites (`/rsrc.php/`) and substitutes a reel's
 `poster` for the video it cannot read.
 
+### Clickbait / rage-bait
+
+`app.py` returns a `ragebait` block on every text post: `score` (a 0.6/0.4 blend of our
+own TF-IDF + LogisticRegression clickbait model in `ML_part/` and an outrage-phrasing
+heuristic), plus `clickbait_model_score` and `heuristic_score` separately. `decide()`
+reads `ragebait.score`, and the verdict carries the model's own probability alongside
+the blend so the dashboard can show what our model contributed.
+
+**The default threshold is 0.60, not `app.py`'s `DEFAULT_RAGEBAIT_THRESHOLD` of 0.55.**
+Measured against the live backend over a 28-post corpus: at 0.55 two ordinary technical
+questions flag — "What's everyone using for CI these days?" scores 0.590. The model was
+trained on news headlines, where an interrogative *is* a bait marker, so real quiz-bait
+("Which productivity personality are you?", 0.598) sits eight thousandths above a genuine
+question. There is no wide safe plateau the way there was for boasting; 0.60 is the
+lowest bar that clears every false positive with any margin, and it catches 7 of 12
+known baits. Do not lower the default without re-running that sweep.
+
 Post ids are prefixed per platform: `x_`, `r_`, `li_`, `ig_`, or `h_` for the
 text-hash fallback where a site gives no stable id. The prefix is not cosmetic:
 two identical captions on different platforms would otherwise collide in the

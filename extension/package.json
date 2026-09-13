@@ -12,7 +12,8 @@
     "preview": "vite",
     "test": "node scripts/smoke.mjs",
     "mock-backend": "node scripts/mock-backend.mjs",
-    "clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\""
+    "clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\"",
+    "e2e": "node scripts/e2e-backend.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

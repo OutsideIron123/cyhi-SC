@@ -51,6 +51,16 @@ export function decide(row, settings, platform, text) {
     }
   }
 
+  // Clickbait / engagement bait. app.py returns this block on every text post;
+  // before this it was computed server-side and thrown away here, which meant
+  // the only model the team actually trained never reached the feed.
+  const ragebait = clamp01(row?.ragebait?.score);
+  const ragebaitModel = clamp01(row?.ragebait?.clickbait_model_score);
+  if (settings.ragebait?.enabled && ragebait >= settings.ragebait.threshold) {
+    reasons.push(REASON.RAGEBAIT);
+    action = strictest(action, settings.ragebait.action);
+  }
+
   return {
     id: row.id,
     action,
@@ -61,6 +71,8 @@ export function decide(row, settings, platform, text) {
     similarity,
     boast,
     boastPhrase,
+    ragebait,
+    ragebaitModel,
     degraded: false,
   };
 }

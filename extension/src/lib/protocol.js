@@ -22,6 +22,10 @@ export const REASON = {
   NSFW: 'nsfw',
   TRIGGER: 'trigger',
   BOAST: 'boast',
+  // Keyed to match app.py's response field name exactly. The score behind it
+  // blends our own clickbait model (ML_part/: TF-IDF + LogisticRegression over
+  // 16k labelled headlines) with an outrage-phrasing heuristic, 0.6/0.4.
+  RAGEBAIT: 'ragebait',
 };
 
 export const PLATFORM = {
@@ -48,6 +52,8 @@ export function allowVerdict(id, degraded = false) {
     trigger: null,
     similarity: 0,
     boast: 0,
+    ragebait: 0,
+    ragebaitModel: 0,
     degraded,
   };
 }

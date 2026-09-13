@@ -16,6 +16,7 @@ export const status = {
   checkedAt: 0,
   latencyMs: 0,
   models: null,
+  service: null,
   triggers: null,
   error: null,
 };
@@ -143,6 +144,9 @@ export async function classify(items, settings) {
         })),
         toxicity_threshold: settings.toxicity.threshold,
         similarity_threshold: similarityFloor(settings),
+        // The score comes back regardless of this; sending it only keeps the
+        // backend's own `flagged` field consistent with the verdict we apply.
+        ragebait_threshold: settings.ragebait?.threshold ?? 0.6,
       },
       REQUEST_TIMEOUT_MS
     );
@@ -174,6 +178,10 @@ export async function health(backendUrl) {
     const json = await res.json().catch(() => ({}));
     recordSuccess(Math.round(performance.now() - t0));
     status.models = json.models || null;
+    // app.py identifies itself as "zenlayer-backend"; the stand-in reports
+    // "MOCK-no-models". Carrying it lets the popup say out loud when the feed
+    // is being scored by nothing, which is otherwise invisible until a demo.
+    status.service = json.service || null;
     syncedTriggerKey = null;
   } catch (err) {
     recordFailure(err);

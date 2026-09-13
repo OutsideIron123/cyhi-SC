@@ -88,6 +88,13 @@ export default function App() {
           : `Backend offline${status?.error ? ` · ${status.error}` : ''} — feed passes through unfiltered`}
       </p>
 
+      {isMockBackend(status) && (
+        <p className="status" style={{ fontWeight: 700 }}>
+          ⚠ Mock backend — no models are loaded. Scores are fake. Stop
+          `npm run mock-backend` and run `python app.py`.
+        </p>
+      )}
+
       <PageReport page={page} />
 
       <section>
@@ -118,6 +125,14 @@ export default function App() {
         hint="Explicit or graphic images"
         value={settings.nsfw}
         onChange={(nsfw) => update({ nsfw })}
+      />
+      <Threshold
+        label="Clickbait"
+        hint="Curiosity gaps, outrage hooks, engagement farming — our own trained model"
+        value={settings.ragebait}
+        onChange={(ragebait) => update({ ragebait })}
+        min={0.35}
+        max={0.85}
       />
       <Threshold
         label="Boasting"
@@ -304,6 +319,16 @@ function Threshold({ label, hint, value, onChange, min = 0.1, max = 0.95 }) {
       </div>
     </section>
   );
+}
+
+// The stand-in reports service "MOCK-no-models" and names every model "MOCK".
+// Either tell is enough; checking both means a renamed stand-in still gets
+// caught rather than quietly passing for the real thing on stage.
+function isMockBackend(status) {
+  if (!status?.online) return false;
+  const service = String(status.service || '');
+  const toxicity = String(status.models?.toxicity?.name || '');
+  return /mock/i.test(service) || /^mock$/i.test(toxicity);
 }
 
 function modelName(status) {

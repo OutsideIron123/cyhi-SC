@@ -15,6 +15,7 @@ export function eventFromVerdict(verdict, platform) {
     tg: verdict.trigger,
     sim: round2(verdict.similarity),
     bst: round2(verdict.boast),
+    rb: round2(verdict.ragebait),
   };
 }
 
@@ -63,7 +64,7 @@ export function summarize(events, { bucketMinutes = 5 } = {}) {
     avgToxicity: 0,
     peakToxicity: 0,
     byAction: { allow: 0, blur: 0, collapse: 0, hide: 0 },
-    byReason: { toxicity: 0, nsfw: 0, trigger: 0, boast: 0 },
+    byReason: { toxicity: 0, nsfw: 0, trigger: 0, boast: 0, ragebait: 0 },
     topTriggers: [],
     timeline: [],
     sessionMinutes: 0,
@@ -72,7 +73,7 @@ export function summarize(events, { bucketMinutes = 5 } = {}) {
   if (!total) return empty;
 
   const byAction = { allow: 0, blur: 0, collapse: 0, hide: 0 };
-  const byReason = { toxicity: 0, nsfw: 0, trigger: 0, boast: 0 };
+  const byReason = { toxicity: 0, nsfw: 0, trigger: 0, boast: 0, ragebait: 0 };
   const byPlatform = {};
   const triggerCounts = new Map();
 
@@ -148,4 +149,5 @@ export const REASON_LABELS = {
   [REASON.NSFW]: 'NSFW',
   [REASON.TRIGGER]: 'Your triggers',
   [REASON.BOAST]: 'Boasting',
+  [REASON.RAGEBAIT]: 'Clickbait',
 };

@@ -23,7 +23,11 @@ export function mockEvents({ count = 240, minutes = 60, seed = 7 } = {}) {
     // that way or the dashboard's Boasting bar sits at zero forever.
     const bst = platform === PLATFORM.LINKEDIN ? clamp01(betaish(rand, 0.36)) : 0;
 
+    // Clickbait is cross-platform, so unlike boast it is not gated on one feed.
+    const rb = clamp01(betaish(rand, 0.34));
+
     const reasons = [];
+    if (rb >= 0.6) reasons.push(REASON.RAGEBAIT);
     if (tox > 0.7) reasons.push(REASON.TOXICITY);
     if (nsf > 0.6) reasons.push(REASON.NSFW);
     const tg = sim > 0.55 ? phrases[Math.floor(rand() * phrases.length)] : null;
@@ -47,6 +51,7 @@ export function mockEvents({ count = 240, minutes = 60, seed = 7 } = {}) {
       tg,
       sim: round2(sim),
       bst: round2(bst),
+      rb: round2(rb),
       rv: reasons.length > 0 && rand() > 0.82,
     });
   }

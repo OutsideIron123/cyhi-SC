@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { decide } from '../src/background/decide.js';
 import { similarityFloor, triggerKey } from '../src/background/backend.js';
 import { fetchAsBase64 } from '../src/background/images.js';
-import { summarize } from '../src/lib/events.js';
+import { summarize, REASON_LABELS } from '../src/lib/events.js';
 import { mockEvents } from '../src/lib/mock.js';
 import { normalize, DEFAULT_SETTINGS } from '../src/lib/settings.js';
 import { ACTION, REASON, PLATFORM, PLATFORM_LABELS } from '../src/lib/protocol.js';
@@ -854,6 +854,103 @@ test('toxicity and NSFW do apply on Instagram', () => {
     ACTION.BLUR
   );
   assert.equal(decide(row({ nsfw: { score: 0.9 } }), base, PLATFORM.INSTAGRAM).action, ACTION.BLUR);
+});
+
+
+// --- Clickbait / rage-bait ------------------------------------------------
+// app.py returns a `ragebait` block on every text post, scored by the one
+// model in this stack we trained ourselves (ML_part/). It was computed and
+// then dropped on the floor here until this was wired up.
+
+const rageRow = (score, model = null) =>
+  row({
+    ragebait: {
+      flagged: score >= 0.6,
+      score,
+      threshold: 0.6,
+      clickbait_model_score: model === null ? score : model,
+      heuristic_score: 0,
+    },
+  });
+
+test('reads the nested ragebait.score, not a flat field', () => {
+  // The exact shape bug that made the old root background.js unable to blur
+  // anything: it read fields app.py has never once returned.
+  const v = decide(rageRow(0.77), base, PLATFORM.X);
+  assert.equal(v.ragebait, 0.77);
+  assert.ok(v.reasons.includes(REASON.RAGEBAIT));
+  assert.equal(v.action, ACTION.COLLAPSE);
+});
+
+test('ragebait at the threshold fires (>=, not >)', () => {
+  assert.notEqual(decide(rageRow(0.6), base, PLATFORM.X).action, ACTION.ALLOW);
+  assert.equal(decide(rageRow(0.5999), base, PLATFORM.X).action, ACTION.ALLOW);
+});
+
+test('the clickbait model score is surfaced next to the blend', () => {
+  // The blend is 0.6*model + 0.4*heuristic, so the model's own probability has
+  // to survive separately or we cannot show what our model contributed.
+  const v = decide(rageRow(0.62, 0.98), base, PLATFORM.X);
+  assert.equal(v.ragebait, 0.62);
+  assert.equal(v.ragebaitModel, 0.98);
+});
+
+test('a post with no ragebait block is not a crash and not a flag', () => {
+  // app.py omits it for an image-only post - there is no text to score.
+  const v = decide(row({ ragebait: null }), base, PLATFORM.X);
+  assert.equal(v.ragebait, 0);
+  assert.equal(v.action, ACTION.ALLOW);
+});
+
+test('clickbait is scored on every platform, unlike boasting', () => {
+  for (const p of Object.values(PLATFORM)) {
+    assert.notEqual(decide(rageRow(0.8), base, p).action, ACTION.ALLOW, `not scored on ${p}`);
+  }
+});
+
+test('disabled clickbait filter is ignored', () => {
+  const off = normalize({ ...base, ragebait: { ...DEFAULT_SETTINGS.ragebait, enabled: false } });
+  assert.equal(decide(rageRow(0.99), off, PLATFORM.X).action, ACTION.ALLOW);
+});
+
+test('a stricter rule still wins over clickbait', () => {
+  const v = decide(
+    row({
+      toxicity: { score: 0.9 },
+      ragebait: { score: 0.9, clickbait_model_score: 0.9, heuristic_score: 0 },
+      semantic: { similarities: { dieting: 0.85 } },
+    }),
+    base,
+    PLATFORM.X
+  );
+  assert.equal(v.action, ACTION.HIDE, 'HIDE from the trigger beats COLLAPSE from clickbait');
+});
+
+test('the clickbait threshold is the calibrated 0.60, not app.py 0.55', () => {
+  // Measured against the live backend: at 0.55 ordinary technical questions
+  // flag ("What's everyone using for CI these days?" scores 0.590) because the
+  // model was trained on headlines, where a question is itself a bait marker.
+  // Real quiz-bait lands at 0.598 - eight thousandths above a false positive.
+  // Do not lower this default without re-running that sweep.
+  assert.equal(DEFAULT_SETTINGS.ragebait.threshold, 0.6);
+  assert.equal(normalize({}).ragebait.threshold, 0.6);
+  assert.equal(normalize({}).ragebait.action, ACTION.COLLAPSE);
+});
+
+test('a genuine question below the bar is left alone', () => {
+  // The live score for "What's everyone using for CI these days?".
+  assert.equal(decide(rageRow(0.59), base, PLATFORM.LINKEDIN).action, ACTION.ALLOW);
+});
+
+test('clickbait events carry their score and reason into the dashboard', () => {
+  const s = summarize(mockEvents({ count: 300, minutes: 60 }));
+  assert.ok(s.byReason.ragebait > 0, 'sample data must exercise the clickbait bar');
+});
+
+test('every reason has a dashboard label', () => {
+  for (const r of Object.values(REASON)) {
+    assert.ok(REASON_LABELS[r], `no label for reason "${r}"`);
+  }
 });
 
 await new Promise((r) => setTimeout(r, 50));

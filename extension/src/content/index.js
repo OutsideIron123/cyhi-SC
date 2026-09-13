@@ -155,8 +155,8 @@ function reportPageStatus(extra = {}) {
 function policyChanged(a, b) {
   if (!a) return true;
   return (
-    JSON.stringify([a.toxicity, a.nsfw, a.boast, a.triggers, a.backendUrl]) !==
-    JSON.stringify([b.toxicity, b.nsfw, b.boast, b.triggers, b.backendUrl])
+    JSON.stringify([a.toxicity, a.nsfw, a.boast, a.ragebait, a.triggers, a.backendUrl]) !==
+    JSON.stringify([b.toxicity, b.nsfw, b.boast, b.ragebait, b.triggers, b.backendUrl])
   );
 }
 
