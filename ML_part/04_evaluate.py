@@ -24,7 +24,7 @@ print("Confusion matrix (rows=actual, cols=predicted):")
 print(confusion_matrix(test_df["label"], preds))
 print(f"ROC-AUC: {roc_auc_score(test_df['label'], probs):.4f}")
 
-# A few real misclassifications -- worth reading, not just the aggregate score.
+
 test_df = test_df.copy()
 test_df["pred"] = preds
 test_df["prob"] = probs

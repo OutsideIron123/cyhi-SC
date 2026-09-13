@@ -40,8 +40,8 @@ def main():
     print(f"clickbait:     {len(clickbait)} unique headlines (raw file had duplicates)")
     print(f"non-clickbait: {len(non_clickbait)} unique headlines (raw file had blank lines)")
 
-    # Cross-file duplicate check -- a headline appearing in both lists would be
-    # a labeling contradiction, and would leak into both train and eval sets.
+    
+    
     overlap = set(h.lower() for h in clickbait) & set(h.lower() for h in non_clickbait)
     if overlap:
         print(f"WARNING: {len(overlap)} headlines appear in BOTH files -- dropping from both")
