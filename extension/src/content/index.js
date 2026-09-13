@@ -162,10 +162,20 @@ function policyChanged(a, b) {
 
 function scan(root) {
   const adapter = ADAPTERS[platform];
-  const nodes =
-    root.nodeType === 1 && root.matches?.(adapter.selector)
-      ? [root]
-      : root.querySelectorAll?.(adapter.selector) || [];
+  let nodes;
+  if (root.nodeType === 1 && root.matches?.(adapter.selector)) {
+    nodes = [root];
+  } else {
+    nodes = [...(root.querySelectorAll?.(adapter.selector) || [])];
+    // A virtualised feed re-hydrates the inside of a card that is already in the
+    // DOM, so the mutation lands on a descendant and the card itself is an
+    // ancestor of `root` - a descendant-only search never finds it, and the post
+    // renders unfiltered.
+    if (!nodes.length && root.nodeType === 1) {
+      const owner = root.closest?.(adapter.selector);
+      if (owner) nodes = [owner];
+    }
+  }
 
   for (const el of nodes) {
     if (el.parentElement?.closest(adapter.selector)) continue;

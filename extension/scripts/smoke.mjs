@@ -7,7 +7,7 @@ import { mockEvents } from '../src/lib/mock.js';
 import { normalize, DEFAULT_SETTINGS } from '../src/lib/settings.js';
 import { ACTION, REASON, PLATFORM, PLATFORM_LABELS } from '../src/lib/protocol.js';
 import { BOAST_PHRASES, readsAsCongratulation } from '../src/lib/boast.js';
-import { ADAPTERS, clean } from '../src/content/adapters.js';
+import { ADAPTERS, clean, stripLinkedInChrome, authorOf } from '../src/content/adapters.js';
 
 let passed = 0;
 const test = (name, fn) => {
@@ -335,6 +335,7 @@ test('no text at all does not veto - the score stands on its own', () => {
 // pulling in a DOM implementation.
 
 const li = ADAPTERS.linkedin;
+const NL = String.fromCharCode(10);
 const TEXT_SEL =
   '.update-components-text, .feed-shared-update-v2__description, ' +
   '.feed-shared-inline-show-more-text, .update-components-update-v2__commentary';
@@ -402,7 +403,9 @@ test('the urn is found on a descendant when the wrapper carries none', () => {
 
 test('a post with no urn at all falls back to a content hash, not to nothing', () => {
   const item = li.extract(fakeEl({ innerText: POST }));
-  assert.ok(item.id.startsWith('h_'));
+  // Platform-scoped now: a bare content hash could collide with a Reddit or X
+  // post of identical text and share its cached verdict.
+  assert.ok(item.id.startsWith('li_h_'), item.id);
   assert.equal(item.text, POST);
 });
 
@@ -463,6 +466,101 @@ test('a short post is kept when it carries an image', () => {
 test('extract caps text so one long post cannot blow the batch payload', () => {
   const item = li.extract(fakeEl({ attrs: { 'data-urn': 'urn:li:activity:3' }, innerText: 'x'.repeat(5000) }));
   assert.equal(item.text.length, 1500);
+});
+
+
+// --- LinkedIn: the rewritten feed build --------------------------------------
+// Hashed classes, no data-urn, virtualised cards. Shapes taken from a real
+// captured feed, not invented to match the selector.
+
+test('the new build selector targets the card, not the display:contents wrapper', () => {
+  // Painting a display:contents element can never render a veil - it has no box.
+  assert.ok(li.selector.includes('[data-lazy-mount-id] [role="listitem"]'));
+  assert.ok(!/\[data-lazy-mount-id\](?!\s)/.test(li.selector), 'must not match the bare wrapper');
+});
+
+test('legacy build selectors are kept, since LinkedIn serves both', () => {
+  assert.ok(li.selector.includes('div.feed-shared-update-v2'));
+  assert.ok(li.selector.includes('[data-urn*="urn:li:activity"]'));
+});
+
+test('author comes from the control-menu aria-label, which survives class hashing', () => {
+  const el = fakeEl({ sel: { '[aria-label^="Open control menu for post by"]': {
+    getAttribute: () => 'Open control menu for post by Muhammad Ayan' } } });
+  assert.equal(authorOf(el), 'Muhammad Ayan');
+  assert.equal(authorOf(fakeEl({})), '');
+});
+
+test('the poster headline is stripped so it cannot inflate the boast score', () => {
+  // A headline like this reads as self-promotion on every post the person makes.
+  const raw = [
+    'Feed post',
+    'Muhammad Ayan',
+    'Engineering AI & Workflow Automations (n8n, Python)',
+    '3d',
+    'Visibility: Global',
+    'Our team shipped a rewrite of the ingestion pipeline this week.',
+    'Like', 'Comment', 'Repost', 'Send',
+  ].join(NL);
+  const body = stripLinkedInChrome(raw, 'Muhammad Ayan');
+  assert.equal(body, 'Our team shipped a rewrite of the ingestion pipeline this week.');
+  assert.ok(!body.includes('Engineering AI'), 'headline must not survive');
+  assert.ok(!body.includes('Feed post'));
+});
+
+test('chrome stripping keeps the body when there is no author to anchor on', () => {
+  const raw = ['Feed post', 'Promoted', '37,319,826 followers', 'Amazon ML Challenge 2026 is open for registration.'].join(NL);
+  assert.equal(stripLinkedInChrome(raw, ''), 'Amazon ML Challenge 2026 is open for registration.');
+});
+
+test('a company post keeps its body - it has no headline to drop', () => {
+  // Regression: dropping the line after the author unconditionally threw away
+  // the entire post on company cards, which carry followers/Promoted instead.
+  const raw = ['Feed post','Amazon','37,319,826 followers','Promoted',
+    'Amazon ML Challenge 2026 is open for registration. Build a model, win prizes.',
+    'Register','Reaction button state: no reaction'].join(NL);
+  const body = stripLinkedInChrome(raw, 'Amazon');
+  assert.equal(body, 'Amazon ML Challenge 2026 is open for registration. Build a model, win prizes.');
+});
+
+test('bullet-prefixed chrome is stripped', () => {
+  const raw = ['Feed post','RAHUL SHEKHAWAT','• 3rd+','Student at SKIT Jaipur','3d','• Follow',
+    'Thrilled to announce that I have been selected for the Google Summer of Code program!','Like'].join(NL);
+  const body = stripLinkedInChrome(raw, 'RAHUL SHEKHAWAT');
+  assert.ok(!body.includes('Follow'), body);
+  assert.ok(!body.includes('SKIT'), 'headline still dropped');
+  assert.ok(body.startsWith('Thrilled to announce'), body);
+});
+
+test('a multi-paragraph body survives intact', () => {
+  const raw = ['Feed post','Dana Ruiz','• 2nd','Staff Engineer at Acme','1w',
+    'We shipped the migration today.','It took four months and three rewrites.',
+    'Full writeup in the comments.','Like','Comment'].join(NL);
+  const body = stripLinkedInChrome(raw, 'Dana Ruiz');
+  assert.ok(body.includes('shipped the migration'));
+  assert.ok(body.includes('four months'));
+  assert.ok(body.includes('Full writeup'));
+  assert.ok(!body.includes('Staff Engineer'), 'headline dropped, body kept');
+});
+
+test('chrome stripping never returns empty for a real post', () => {
+  const body = stripLinkedInChrome(['Feed post','RAHUL SHEKHAWAT','Student at SKIT Jaipur','3d','Just finished a great course.'].join(NL), 'RAHUL SHEKHAWAT');
+  assert.ok(body.length > 10, body);
+  assert.ok(body.includes('great course'));
+});
+
+test('a new-build card with no urn still gets a stable, platform-scoped id', () => {
+  const el = fakeEl({ innerText: POST, sel: { '[aria-label^="Open control menu for post by"]': null } });
+  const a = li.extract(el).id;
+  const b = li.extract(fakeEl({ innerText: POST })).id;
+  assert.ok(a.startsWith('li_'), a);
+  assert.equal(a, b, 'same text must hash the same, or remounting re-classifies the post');
+});
+
+test('two different posts do not collide on id', () => {
+  const a = li.extract(fakeEl({ innerText: POST })).id;
+  const b = li.extract(fakeEl({ innerText: 'A completely different post about ferrets and networking.' })).id;
+  assert.notEqual(a, b);
 });
 
 test('LinkedIn returns the same item shape Reddit does', () => {

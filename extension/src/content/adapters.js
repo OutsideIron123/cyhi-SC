@@ -40,12 +40,20 @@ export const ADAPTERS = {
   },
   [PLATFORM.LINKEDIN]: {
     hosts: ['linkedin.com', 'www.linkedin.com'],
-    // LinkedIn ships several feed markups at once and renames classes often, so
-    // cast a wide net: urn attributes anywhere (substring, not prefix - the urn
-    // is frequently a suffix of a longer data-id), the older class names, and
-    // the direct children of the infinite-scroll list, which has outlived every
-    // rename so far. extract() below throws out what that width drags in.
+    // LinkedIn runs several feed builds at once. The current one is a rewrite:
+    // every class is a rotating hash (_1470c439), data-urn is gone entirely,
+    // and the feed is virtualised - only ~7 posts are mounted at a time, each
+    // inside a div[data-lazy-mount-id] whose style is `display: contents`.
+    //
+    // So match on attributes and ARIA, which survive class hashing, and match
+    // the role="listitem" card rather than its mount wrapper: a display:contents
+    // element generates no box, so painting it can never render a veil.
+    //
+    // The legacy arms stay because the old build is still served to some
+    // accounts. extract() throws out whatever the width drags in.
     selector: [
+      '[data-lazy-mount-id] [role="listitem"]',
+      'main [role="listitem"]',
       '[data-urn*="urn:li:activity"]',
       '[data-id*="urn:li:activity"]',
       'div.feed-shared-update-v2',
@@ -71,10 +79,16 @@ export const ADAPTERS = {
         '.update-components-text, .feed-shared-update-v2__description, ' +
           '.feed-shared-inline-show-more-text, .update-components-update-v2__commentary'
       );
-      // Falling back to the element's own text beats silently skipping the post:
-      // an unmatched commentary class used to leave text empty, and scan() drops
-      // anything with no text and no image.
-      const text = clean(textEl ? ownText(textEl) : own).slice(0, 1500);
+      // The new build has no commentary element to target, so the body has to be
+      // recovered from the card's own innerText with the chrome stripped off.
+      // That matters beyond tidiness: the actor block carries the poster's
+      // LinkedIn headline ("Helping founders scale...") which reads as
+      // self-promotion and would inflate the boast score of every post in the
+      // feed, including ordinary ones.
+      const text = (textEl ? clean(ownText(textEl)) : stripLinkedInChrome(own, authorOf(el))).slice(
+        0,
+        1500
+      );
 
       const images = [...el.querySelectorAll('img')]
         .map((img) => img.currentSrc || img.src)
@@ -89,7 +103,10 @@ export const ADAPTERS = {
             !src.includes('company-logo')
         );
 
-      return { id: activity ? `li_${activity}` : fallbackId(el, text), text, images };
+      // No urn survives in the new build, so identity falls back to a content
+      // hash. That is also what makes virtualisation survivable: a post that
+      // unmounts and remounts hashes to the same id and hits the verdict cache.
+      return { id: activity ? `li_${activity}` : `li_${fallbackId(el, text)}`, text, images };
     },
   },
 };
@@ -104,6 +121,61 @@ function ownText(el) {
   const text = (el.innerText || '').trim();
   veil.style.display = hidden;
   return text;
+}
+
+// Every post card carries a control-menu button labelled "Open control menu for
+// post by <name>". It is the one per-post, per-author handle that survives the
+// class hashing, so it is how we know whose header to strip.
+export function authorOf(el) {
+  const label =
+    el.querySelector('[aria-label^="Open control menu for post by"]')?.getAttribute('aria-label') ||
+    '';
+  return label.replace(/^Open control menu for post by\s*/i, '').trim();
+}
+
+// Lines that are feed furniture rather than anything the poster wrote: actor
+// chrome, the social action bar, and button labels that innerText picks up.
+const CHROME_LINE = new RegExp(
+  '^(' +
+    'feed post|promoted|sponsored|follow(ing)?|connect|message|subscribe|' +
+    'like|likes?|comment|comments?|repost|reposts?|send|share|save|' +
+    'register|apply( now)?|learn more|sign up|download|view\\b.*|' +
+    'reaction button state.*|visibility:.*|see more|…\\s*see more|edited|' +
+    '[•·]|(1st|2nd|3rd\\+?)|\\d+(st|nd|rd|th)\\+?|' +
+    '[\\d,.]+\\s*(k|m)?\\s*(followers?|connections?|reactions?|comments?|reposts?|impressions?)|' +
+    '\\d+\\s*[smhdwy]o?(\\s*(ago|[•·]|edited))*' +
+    ')$',
+  'i'
+);
+
+// innerText gives real line breaks, so the header can be peeled off line by line
+// rather than guessed at from a blob.
+export function stripLinkedInChrome(text, author = '') {
+  const lines = [];
+  let headlineAt = -1;
+
+  for (const raw of String(text || '').split('\n')) {
+    // Bullets are glued onto chrome ("• Follow", "• 3rd+") as separators.
+    const line = raw.trim().replace(/^[•·]\s*/, '').trim();
+    if (!line || CHROME_LINE.test(line)) continue;
+    if (author && line.replace(/\s*[•·].*$/, '').trim() === author) {
+      headlineAt = lines.length;
+      continue;
+    }
+    lines.push(line);
+  }
+
+  // The poster's headline sits directly after their name and would read as
+  // self-promotion on every post they make. Only drop it when something longer
+  // follows: a company post has no headline, and there that line IS the post -
+  // dropping it blindly threw away the whole body.
+  if (headlineAt >= 0 && headlineAt < lines.length) {
+    const candidate = lines[headlineAt];
+    const longerFollows = lines.slice(headlineAt + 1).some((l) => l.length > candidate.length);
+    if (longerFollows && candidate.length < 160) lines.splice(headlineAt, 1);
+  }
+
+  return clean(lines.join(' '));
 }
 
 // LinkedIn folds long posts and appends "…see more" - mid-string, after a
