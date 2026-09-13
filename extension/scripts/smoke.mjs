@@ -6,7 +6,11 @@ import { summarize, REASON_LABELS } from '../src/lib/events.js';
 import { mockEvents } from '../src/lib/mock.js';
 import { normalize, DEFAULT_SETTINGS } from '../src/lib/settings.js';
 import { ACTION, REASON, PLATFORM, PLATFORM_LABELS } from '../src/lib/protocol.js';
-import { BOAST_PHRASES, readsAsCongratulation } from '../src/lib/boast.js';
+import {
+  BOAST_PHRASES,
+  readsAsCongratulation,
+  readsAsBoastAnnouncement,
+} from '../src/lib/boast.js';
 import {
   LEVELS,
   LEVEL_THRESHOLDS,
@@ -1115,6 +1119,57 @@ test('the LinkedIn tail rule survives its own escaping', () => {
   // ...and must not fire on a body that merely mentions comments.
   const body = 'I got 3 comments on my last post and it changed everything';
   assert.equal(stripLinkedInChrome(body), body);
+});
+
+
+test('the announcement formula fires boast regardless of embedding score', () => {
+  // The embedding is length-sensitive: measured live, the same announcement is
+  // 0.668 in one line and 0.526 wrapped in a paragraph, and a humblebrag lands
+  // at 0.447 against a 0.42 bar. A brag that opens this way is a brag at any
+  // length, so the opener is sufficient on its own.
+  for (const t of [
+    'Thrilled to announce that I have been promoted to Senior Engineering Manager!',
+    'Humbled to share that I have been recognised as one of the top 30 under 30.',
+    'Happy to share that I have earned the AWS Solutions Architect certification!',
+    'Big news! I am starting a new role next month.',
+  ]) {
+    assert.ok(readsAsBoastAnnouncement(t), `should read as an announcement: ${t}`);
+  }
+});
+
+test('the announcement rule does not fire on ordinary posts', () => {
+  for (const t of [
+    'finally got the build working after six hours. the bug was a trailing slash.',
+    'does anyone have a good recommendation for filter coffee near campus',
+    'another round of layoffs announced today, third one this quarter',
+    'We are hiring two backend engineers in Bangalore. Details in the comments.',
+    // "thrilled" without the telling verb is just a feeling, not an announcement.
+    'I was thrilled by the conference talk yesterday, lots to think about.',
+  ]) {
+    assert.equal(readsAsBoastAnnouncement(t), false, `must not fire on: ${t}`);
+  }
+});
+
+test('an announcement about someone else is still vetoed', () => {
+  // The lexical route must not become a way around the congratulation veto.
+  const t = 'Thrilled to announce that Priya has been promoted to Director. Congratulations Priya!';
+  assert.ok(readsAsBoastAnnouncement(t), 'it does read as an announcement');
+  const v = decide(row({ semantic: { similarities: {} } }), base, PLATFORM.LINKEDIN, t);
+  assert.equal(v.action, ACTION.ALLOW, 'but the veto still wins');
+});
+
+test('a long boast that scores under the bar is still caught', () => {
+  // Score deliberately below threshold - the lexical route has to carry it.
+  const t = 'Thrilled to share some personal news! After six incredible years I am joining Acme as a Staff Engineer, and I am grateful to everyone who helped along the way.';
+  const v = decide(boastRow(0.30), base, PLATFORM.LINKEDIN, t);
+  assert.notEqual(v.action, ACTION.ALLOW);
+  assert.ok(v.reasons.includes(REASON.BOAST));
+});
+
+test('the announcement rule respects platform scope and the enable toggle', () => {
+  const t = 'Thrilled to announce that I have been promoted!';
+  assert.equal(decide(boastRow(0.1), base, PLATFORM.X, t).action, ACTION.ALLOW, 'X is out of scope');
+  assert.equal(decide(boastRow(0.1), noBoast, PLATFORM.LINKEDIN, t).action, ACTION.ALLOW, 'disabled');
 });
 
 await new Promise((r) => setTimeout(r, 50));

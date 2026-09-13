@@ -1,5 +1,10 @@
 import { ACTION, REASON } from '../lib/protocol.js';
-import { boastAppliesTo, boastScore, readsAsCongratulation } from '../lib/boast.js';
+import {
+  boastAppliesTo,
+  boastScore,
+  readsAsCongratulation,
+  readsAsBoastAnnouncement,
+} from '../lib/boast.js';
 
 const RANK = { [ACTION.ALLOW]: 0, [ACTION.BLUR]: 1, [ACTION.COLLAPSE]: 2, [ACTION.HIDE]: 3 };
 
@@ -41,13 +46,22 @@ export function decide(row, settings, platform, text) {
   let boastPhrase = null;
   if (boastAppliesTo(platform, settings.boast)) {
     const hit = boastScore(similarities);
-    if (hit) {
-      boast = hit.score;
-      if (boast >= settings.boast.threshold && !readsAsCongratulation(text)) {
-        boastPhrase = hit.phrase;
-        reasons.push(REASON.BOAST);
-        action = strictest(action, settings.boast.action);
-      }
+    if (hit) boast = hit.score;
+
+    // Two independent routes to the same verdict. The embedding catches brags
+    // that use no stock phrasing; the lexical opener catches the ones whose
+    // score has been dragged down by the length of the story wrapped around
+    // them. Either is sufficient - requiring both would lose exactly the long
+    // posts this was added for.
+    const clearsThreshold = hit && boast >= settings.boast.threshold;
+    const announces = readsAsBoastAnnouncement(text);
+
+    // The congratulation veto still governs both. "Thrilled to announce that
+    // Priya has been promoted" matches the opener and is still not a brag.
+    if ((clearsThreshold || announces) && !readsAsCongratulation(text)) {
+      boastPhrase = hit?.phrase ?? null;
+      reasons.push(REASON.BOAST);
+      action = strictest(action, settings.boast.action);
     }
   }
 

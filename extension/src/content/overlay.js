@@ -17,9 +17,28 @@ export function injectStyles() {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    [data-cf-action="${ACTION.BLUR}"] { position: relative !important; }
+    [data-cf-action="${ACTION.BLUR}"] {
+      position: relative !important;
+      /* The blurred children are scaled up below and would otherwise spill
+         over neighbouring posts. */
+      overflow: hidden !important;
+    }
     [data-cf-action="${ACTION.BLUR}"] > *:not(.${VEIL_CLASS}) {
-      filter: blur(var(--cf-blur, 14px)) saturate(0.6) !important;
+      /* blur() alone leaves large text perfectly legible - headlines survive
+         it because their strokes are wider than the radius. Desaturating and
+         darkening removes the contrast the eye reconstructs letterforms from,
+         and the scale pushes the edges (which blur leaves sharp against the
+         card boundary) out of view.
+
+         Together these make the post genuinely unreadable rather than merely
+         soft-focused, which is the point: a veil you can squint past is not a
+         filter, it is a suggestion. */
+      filter:
+        blur(var(--cf-blur, 24px))
+        saturate(0.25)
+        brightness(0.55)
+        contrast(0.75) !important;
+      transform: scale(1.06) !important;
       pointer-events: none !important;
       user-select: none !important;
     }
@@ -40,7 +59,17 @@ export function injectStyles() {
       gap: 8px !important;
       padding: 16px !important;
       box-sizing: border-box !important;
-      background: color-mix(in srgb, canvas 72%, transparent) !important;
+      /* Deliberately not opaque. At 88% the veil hid the post completely and
+         the card became a flat grey panel - obscured, but with no indication
+         anything was ever there. Letting the darkened smear show through reads
+         as "a post you are choosing not to look at" rather than a loading
+         error, and the backdrop-filter is a second independent pass so what
+         does come through is still unreadable. */
+      background: color-mix(in srgb, canvas 58%, canvastext 6%) !important;
+      backdrop-filter: blur(10px) brightness(0.6) saturate(0.25) !important;
+      -webkit-backdrop-filter: blur(10px) brightness(0.6) saturate(0.25) !important;
+      /* The label needs to stay readable against whatever is behind it. */
+      text-shadow: 0 1px 3px color-mix(in srgb, canvas 80%, transparent) !important;
       border-radius: 12px !important;
       font: 500 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif !important;
       color: canvastext !important;
@@ -51,7 +80,8 @@ export function injectStyles() {
       position: static !important;
       inset: auto !important;
       min-height: 96px !important;
-      background: color-mix(in srgb, canvas 92%, canvastext 8%) !important;
+      background: color-mix(in srgb, canvas 90%, canvastext 10%) !important;
+      backdrop-filter: none !important;
     }
     .${VEIL_CLASS}-reason { opacity: 0.75 !important; }
     .${VEIL_CLASS}-btn {
@@ -73,7 +103,7 @@ export function injectStyles() {
 export function paint(el, verdict, settings) {
   if (verdict.action === ACTION.ALLOW) return;
   el.setAttribute('data-cf-action', verdict.action);
-  el.style.setProperty('--cf-blur', `${settings?.blurAmount ?? 14}px`);
+  el.style.setProperty('--cf-blur', `${settings?.blurAmount ?? 24}px`);
 
   if (el.querySelector(`:scope > .${VEIL_CLASS}`)) return;
 

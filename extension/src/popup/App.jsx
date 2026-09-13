@@ -214,8 +214,8 @@ export default function App() {
           <label className="grow">Blur strength</label>
           <input
             type="range"
-            min="4"
-            max="30"
+            min="8"
+            max="60"
             step="1"
             value={settings.blurAmount}
             onChange={(e) => update({ blurAmount: Number(e.target.value) })}

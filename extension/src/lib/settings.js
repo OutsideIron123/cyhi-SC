@@ -38,7 +38,9 @@ export const DEFAULT_SETTINGS = {
   defaultTriggerThreshold: 0.32,
 
   scanImages: true,
-  blurAmount: 14,
+  // 14px left headlines legible - large text survives a blur whose radius is
+  // narrower than its strokes. Paired with the darkening in overlay.js.
+  blurAmount: 24,
   showReason: true,
   logEvents: true,
 
@@ -86,7 +88,7 @@ export function normalize(stored) {
   s.boast.platforms = Array.isArray(s.boast.platforms) && s.boast.platforms.length
     ? s.boast.platforms.filter((p) => typeof p === 'string' && p)
     : [...BOAST_PLATFORMS];
-  s.blurAmount = Math.max(0, Math.min(40, num(s.blurAmount, 14)));
+  s.blurAmount = Math.max(0, Math.min(60, num(s.blurAmount, 24)));
   s.backendUrl = String(s.backendUrl || '').trim().replace(/\/+$/, '');
   return s;
 }
