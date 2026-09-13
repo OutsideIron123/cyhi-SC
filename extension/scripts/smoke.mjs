@@ -1095,6 +1095,28 @@ test('a post body containing a bullet is never eaten by the chrome stripper', ()
   assert.equal(stripLinkedInChrome(body), body);
 });
 
+
+test('the LinkedIn tail rule survives its own escaping', () => {
+  // LI_TAIL is built from string concatenation, so every backslash needs
+  // doubling. It shipped once with \d collapsed to d, which silently reduced
+  // the rule to its literal phrases: a card showing counts and the action bar
+  // but no "Load more comments" was not cut at all. Assert behaviour, not text.
+  const cut = [
+    '247 comments', '38 comments', '12 reposts', '1,204 reactions',
+    'Like Comment Repost Send', 'Load more comments',
+  ];
+  for (const line of cut) {
+    assert.equal(
+      stripLinkedInChrome(['A real boast about my promotion', line, 'someone else replied here'].join(NL)),
+      'A real boast about my promotion',
+      `should cut at: ${line}`
+    );
+  }
+  // ...and must not fire on a body that merely mentions comments.
+  const body = 'I got 3 comments on my last post and it changed everything';
+  assert.equal(stripLinkedInChrome(body), body);
+});
+
 await new Promise((r) => setTimeout(r, 50));
 test('every platform has a display label', () => {
   for (const p of Object.values(PLATFORM)) {

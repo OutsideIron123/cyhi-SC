@@ -203,8 +203,8 @@ const LI_TAIL = new RegExp(
   '^(' +
     'load more comments|see more comments|most relevant|all comments|' +
     'add a comment|write a comment|be the first to comment|' +
-    '[\d,.]+\s*(k|m)?\s*(comments?|reposts?|reactions?|likes?)|' +
-    '(like|comment|repost|send)(\s+(like|comment|repost|send))+|' +
+    '[\\d,.]+\\s*(k|m)?\\s*(comments?|reposts?|reactions?|likes?)|' +
+    '(like|comment|repost|send)(\\s+(like|comment|repost|send))+|' +
     'activate to view larger image.*|reaction button state.*' +
     ')$',
   'i'
