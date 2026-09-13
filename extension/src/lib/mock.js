@@ -15,21 +15,35 @@ export function mockEvents({ count = 240, minutes = 60, seed = 7 } = {}) {
     const nsf = clamp01(betaish(rand, 0.28));
     const sim = clamp01(betaish(rand, 0.3));
 
+    const platform = pickPlatform(rand());
+    // Boasting only ever scores on LinkedIn, so the sample data has to model it
+    // that way or the dashboard's Boasting bar sits at zero forever.
+    const bst = platform === PLATFORM.LINKEDIN ? clamp01(betaish(rand, 0.36)) : 0;
+
     const reasons = [];
     if (tox > 0.7) reasons.push(REASON.TOXICITY);
     if (nsf > 0.6) reasons.push(REASON.NSFW);
     const tg = sim > 0.55 ? phrases[Math.floor(rand() * phrases.length)] : null;
     if (tg) reasons.push(REASON.TRIGGER);
+    const boasted = bst >= 0.42;
+    if (boasted) reasons.push(REASON.BOAST);
 
     out.push({
       t,
-      p: pickPlatform(rand()),
-      a: reasons.length ? (nsf > 0.6 ? ACTION.COLLAPSE : ACTION.BLUR) : ACTION.ALLOW,
+      p: platform,
+      a: reasons.length
+        ? nsf > 0.6
+          ? ACTION.COLLAPSE
+          : boasted && reasons.length === 1
+            ? ACTION.COLLAPSE
+            : ACTION.BLUR
+        : ACTION.ALLOW,
       r: reasons,
       tox: round2(tox),
       nsf: round2(nsf),
       tg,
       sim: round2(sim),
+      bst: round2(bst),
       rv: reasons.length > 0 && rand() > 0.82,
     });
   }

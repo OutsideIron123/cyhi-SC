@@ -47,7 +47,12 @@ async function start() {
   onSettingsChanged((next) => {
     const before = settings;
     settings = next;
-    if (policyChanged(before, next)) {
+    // Switching back on has to re-scan like a policy change would. Turning off
+    // drops the paint but leaves ids in `seen`, so without this the page stays
+    // unfiltered until you reload it - scan() skips anything already seen, and
+    // the verdict it would repaint from was cleared with `painted`.
+    const switchedOn = next.enabled && before && !before.enabled;
+    if (policyChanged(before, next) || switchedOn) {
       seen.clear();
       for (const [, el] of painted) unpaint(el);
       painted.clear();
