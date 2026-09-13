@@ -8,6 +8,13 @@ import { normalize, DEFAULT_SETTINGS } from '../src/lib/settings.js';
 import { ACTION, REASON, PLATFORM, PLATFORM_LABELS } from '../src/lib/protocol.js';
 import { BOAST_PHRASES, readsAsCongratulation } from '../src/lib/boast.js';
 import {
+  LEVELS,
+  LEVEL_THRESHOLDS,
+  levelFor,
+  thresholdFor,
+  isExactLevel,
+} from '../src/lib/levels.js';
+import {
   ADAPTERS,
   clean,
   stripLinkedInChrome,
@@ -951,6 +958,82 @@ test('every reason has a dashboard label', () => {
   for (const r of Object.values(REASON)) {
     assert.ok(REASON_LABELS[r], `no label for reason "${r}"`);
   }
+});
+
+
+// --- Low / Mid / High filtering levels ------------------------------------
+
+test('every level table is ordered high-catches-more, i.e. descending', () => {
+  // The whole UI inverts here: "High" filtering means a LOWER score threshold.
+  // Get this backwards and the buttons silently do the opposite of their label.
+  for (const [kind, row] of Object.entries(LEVEL_THRESHOLDS)) {
+    assert.ok(row.low > row.mid, `${kind}: low must sit above mid`);
+    assert.ok(row.mid > row.high, `${kind}: mid must sit above high`);
+  }
+});
+
+test('mid is the calibrated default that actually ships', () => {
+  // If a default moves and its table does not, the popup opens showing a level
+  // the user never chose. These are the numbers in DEFAULT_SETTINGS.
+  const s = normalize({});
+  assert.equal(LEVEL_THRESHOLDS.toxicity.mid, s.toxicity.threshold);
+  assert.equal(LEVEL_THRESHOLDS.nsfw.mid, s.nsfw.threshold);
+  assert.equal(LEVEL_THRESHOLDS.boast.mid, s.boast.threshold);
+  assert.equal(LEVEL_THRESHOLDS.ragebait.mid, s.ragebait.threshold);
+  assert.equal(LEVEL_THRESHOLDS.trigger.mid, s.defaultTriggerThreshold);
+});
+
+test('a freshly installed popup opens on Mid everywhere', () => {
+  const s = normalize({});
+  assert.equal(levelFor('toxicity', s.toxicity.threshold), 'mid');
+  assert.equal(levelFor('nsfw', s.nsfw.threshold), 'mid');
+  assert.equal(levelFor('boast', s.boast.threshold), 'mid');
+  assert.equal(levelFor('ragebait', s.ragebait.threshold), 'mid');
+});
+
+test('thresholdFor and levelFor round-trip on every stop', () => {
+  for (const kind of Object.keys(LEVEL_THRESHOLDS)) {
+    for (const level of LEVELS) {
+      assert.equal(levelFor(kind, thresholdFor(kind, level)), level, `${kind}/${level}`);
+    }
+  }
+});
+
+test('a threshold left behind by the old slider renders as the nearest level', () => {
+  // Settings saved before this UI existed still load; they just round.
+  assert.equal(levelFor('ragebait', 0.59), 'mid');
+  assert.equal(levelFor('ragebait', 0.69), 'low');
+  assert.equal(levelFor('toxicity', 0.42), 'high');
+  assert.equal(isExactLevel('ragebait', 0.59), false, 'and is reported as custom');
+  assert.equal(isExactLevel('ragebait', 0.6), true);
+});
+
+test('clickbait High is the level that knowingly trades false positives', () => {
+  // Measured against the live backend: 0.60 is the lowest bar with zero false
+  // positives, and an ordinary technical question scores 0.590. High has to sit
+  // below that question to be worth offering at all.
+  const GENUINE_QUESTION = 0.59;
+  assert.ok(LEVEL_THRESHOLDS.ragebait.high < GENUINE_QUESTION);
+  assert.ok(LEVEL_THRESHOLDS.ragebait.mid > GENUINE_QUESTION, 'Mid must stay clean');
+});
+
+test('boast Mid stays inside the measured 0.40-0.44 plateau', () => {
+  assert.ok(LEVEL_THRESHOLDS.boast.mid >= 0.4 && LEVEL_THRESHOLDS.boast.mid <= 0.44);
+  assert.ok(LEVEL_THRESHOLDS.boast.high < 0.4, 'High steps off the plateau deliberately');
+});
+
+test('picking a level writes a number, so nothing downstream knows levels exist', () => {
+  // decide() and the backend payload still see a plain threshold.
+  const picked = thresholdFor('toxicity', 'high');
+  assert.equal(typeof picked, 'number');
+  const s = normalize({ toxicity: { enabled: true, threshold: picked, action: ACTION.BLUR } });
+  assert.equal(s.toxicity.threshold, picked, 'normalize must not rewrite a level value');
+  assert.equal(decide(row({ toxicity: { score: 0.55 } }), s).action, ACTION.BLUR);
+});
+
+test('an unknown category is a throw, not a silent mid', () => {
+  assert.throws(() => thresholdFor('nope', 'low'));
+  assert.throws(() => levelFor('nope', 0.5));
 });
 
 await new Promise((r) => setTimeout(r, 50));

@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MSG, ACTION } from '../lib/protocol.js';
 import { makeTrigger, normalize, DEFAULT_SETTINGS } from '../lib/settings.js';
+import {
+  LEVELS,
+  LEVEL_LABELS,
+  LEVEL_HINTS,
+  levelFor,
+  thresholdFor,
+  isExactLevel,
+} from '../lib/levels.js';
 import { rpc } from '../lib/rpc.js';
 
 const LIVE = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
@@ -115,32 +123,32 @@ export default function App() {
       </section>
 
       <Threshold
+        kind="toxicity"
         label="Toxicity"
         hint="Hate, harassment, abuse"
         value={settings.toxicity}
         onChange={(toxicity) => update({ toxicity })}
       />
       <Threshold
+        kind="nsfw"
         label="NSFW"
         hint="Explicit or graphic images"
         value={settings.nsfw}
         onChange={(nsfw) => update({ nsfw })}
       />
       <Threshold
+        kind="ragebait"
         label="Clickbait"
         hint="Curiosity gaps, outrage hooks, engagement farming — our own trained model"
         value={settings.ragebait}
         onChange={(ragebait) => update({ ragebait })}
-        min={0.35}
-        max={0.85}
       />
       <Threshold
+        kind="boast"
         label="Boasting"
         hint="Humblebrags, promotion announcements, hustle posts — LinkedIn only"
         value={settings.boast}
         onChange={(boast) => update({ boast })}
-        min={0.2}
-        max={0.75}
       />
       <label className="row">
         <input
@@ -188,17 +196,12 @@ export default function App() {
                   ×
                 </button>
               </div>
-              <div className="row">
-                <input
-                  type="range"
-                  min="0.15"
-                  max="0.7"
-                  step="0.01"
-                  value={t.threshold}
-                  onChange={(e) => patchTrigger(t.id, { threshold: Number(e.target.value) })}
-                />
-                <span className="num">{sensitivityLabel(t.threshold)}</span>
-              </div>
+              <LevelPicker
+                kind="trigger"
+                threshold={t.threshold}
+                disabled={!t.enabled}
+                onPick={(threshold) => patchTrigger(t.id, { threshold })}
+              />
             </li>
           ))}
           {!settings.triggers.length && <li className="empty">No topics muted yet.</li>}
@@ -285,7 +288,7 @@ function PageReport({ page }) {
   );
 }
 
-function Threshold({ label, hint, value, onChange, min = 0.1, max = 0.95 }) {
+function Threshold({ kind, label, hint, value, onChange }) {
   return (
     <section>
       <div className="row">
@@ -305,19 +308,49 @@ function Threshold({ label, hint, value, onChange, min = 0.1, max = 0.95 }) {
         </select>
       </div>
       <p className="hint">{hint}</p>
-      <div className="row">
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step="0.01"
-          disabled={!value.enabled}
-          value={value.threshold}
-          onChange={(e) => onChange({ ...value, threshold: Number(e.target.value) })}
-        />
-        <span className="num">{Math.round(value.threshold * 100)}%</span>
-      </div>
+      <LevelPicker
+        kind={kind}
+        threshold={value.threshold}
+        disabled={!value.enabled}
+        onPick={(threshold) => onChange({ ...value, threshold })}
+      />
     </section>
+  );
+}
+
+// Three named stops in place of a raw threshold slider. High is on the right
+// and means "catch more", which is the LOWER number - see src/lib/levels.js.
+function LevelPicker({ kind, threshold, disabled, onPick }) {
+  const active = levelFor(kind, threshold);
+  const rounded = !isExactLevel(kind, threshold);
+  return (
+    <>
+      <div className="levels" role="group" aria-label="Filtering strength">
+        {LEVELS.map((level) => (
+          <button
+            key={level}
+            type="button"
+            className="level"
+            aria-pressed={level === active}
+            data-on={String(level === active)}
+            disabled={disabled}
+            title={LEVEL_HINTS[level]}
+            onClick={() => onPick(thresholdFor(kind, level))}
+          >
+            {LEVEL_LABELS[level]}
+          </button>
+        ))}
+      </div>
+      {rounded && (
+        // A threshold from the old slider, or one a calibration script wrote,
+        // is not one of the three stops. Say so rather than silently showing
+        // the nearest button as if it were exact.
+        <p className="hint">
+          Custom setting ({Math.round(threshold * 100)}%) — showing nearest. Pick a level to
+          snap to it.
+        </p>
+      )}
+    </>
   );
 }
 
@@ -334,11 +367,4 @@ function isMockBackend(status) {
 function modelName(status) {
   const n = status?.models?.toxicity?.name;
   return typeof n === 'string' ? n.split('/').pop() : '';
-}
-
-function sensitivityLabel(v) {
-  if (v <= 0.25) return 'Catch a lot';
-  if (v <= 0.38) return 'Balanced';
-  if (v <= 0.52) return 'Close matches';
-  return 'Near-exact only';
 }

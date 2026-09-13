@@ -97,9 +97,9 @@ Three things about this contract are load-bearing:
 
 - **We read `score`, not `flagged`.** The backend computes `flagged` from the
   thresholds we sent, but the extension re-derives the action client-side in
-  `decide.js`. That keeps one decision point and lets a slider take effect on the
-  next scroll. It also means the NSFW slider works even though the backend's own
-  `flagged` is a label check rather than a threshold.
+  `decide.js`. That keeps one decision point and lets a level change take effect
+  on the next scroll. It also means the NSFW setting works even though the
+  backend's own `flagged` is a label check rather than a threshold.
 - **`similarities` is keyed by phrase**, not by trigger id, so `decide.js` matches
   on phrase text. Rename a trigger in the popup and it is a different trigger.
 - **`similarity_threshold` is batch-wide, but the popup has one per trigger.** We
@@ -114,6 +114,39 @@ slow part of a batch.
 
 A post the backend omits, or that comes back with `errors`, is treated as *allow*.
 A model crash must never blank the feed.
+
+## Filtering strength (Low / Mid / High)
+
+The popup exposes three named stops per category, not a raw threshold slider.
+The table lives in `src/lib/levels.js`.
+
+**More filtering means a lower threshold.** "High" catches more, so it is the
+*smallest* number in every row. Getting this backwards makes the buttons do the
+opposite of their label, so `levels.js` is covered by a test that asserts every
+row is ordered `low > mid > high`.
+
+`mid` is the calibrated default in every row - the value the category actually
+ships with in `DEFAULT_SETTINGS`, kept in sync by another test. Low and High are
+deliberate moves away from a measured point:
+
+| Category  | Low  | Mid  | High | Why Mid is there                                  |
+|-----------|------|------|------|---------------------------------------------------|
+| Toxicity  | 0.85 | 0.70 | 0.50 | toxic-bert's own default; well separated           |
+| NSFW      | 0.80 | 0.60 | 0.40 | Falconsai scores are bimodal, exact bar matters less |
+| Boasting  | 0.52 | 0.42 | 0.36 | midpoint of the measured 0.40-0.44 zero-FP plateau |
+| Clickbait | 0.70 | 0.60 | 0.52 | lowest bar with zero false positives (7/12 baits)  |
+| Triggers  | 0.45 | 0.32 | 0.24 | `defaultTriggerThreshold`                          |
+
+Clickbait **High is a knowing trade**: it catches 10/12 baits instead of 7, but
+flags ordinary technical questions. The model was trained on news headlines,
+where an interrogative is itself a bait marker, so a genuine question ("What's
+everyone using for CI these days?", 0.590) sits eight thousandths below real
+quiz-bait (0.598). There is no bar that separates them - only a choice.
+
+Nothing downstream knows levels exist. Thresholds are still stored as plain
+numbers, `decide()` and the backend payload are unchanged, and a threshold left
+behind by the old slider still loads - it renders as the nearest level, with the
+popup admitting it is rounding.
 
 ## Supported platforms
 
