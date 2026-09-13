@@ -47,6 +47,23 @@ if ([string]::IsNullOrWhiteSpace($plain)) {
   exit 1
 }
 
+# Catch a bad paste here rather than as a 401 after the upload, where the error
+# ("Unknown JWT iss") points at the issuer and not at the secret you mistyped.
+$plain = $plain.Trim()
+if ($plain -match '^user:') {
+  Write-Host ''
+  Write-Host 'That is the ISSUER, not the secret.' -ForegroundColor Red
+  Write-Host 'The issuer is already set; the prompt wants the 64-character hex secret.' -ForegroundColor DarkGray
+  exit 1
+}
+if ($plain -notmatch '^[0-9a-f]{64}$') {
+  Write-Host ''
+  Write-Host ("Secret does not look right: got {0} characters." -f $plain.Length) -ForegroundColor Red
+  Write-Host 'Expected exactly 64 lowercase hex characters (0-9, a-f).' -ForegroundColor DarkGray
+  Write-Host 'Check for a partial paste, a trailing space, or wrapping quotes.' -ForegroundColor DarkGray
+  exit 1
+}
+
 try {
   # web-ext picks these up on its own, so the secret never becomes an argv entry
   # that a process listing or history file could capture.
