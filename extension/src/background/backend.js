@@ -111,21 +111,29 @@ export function similarityFloor(settings) {
 
 async function attachImages(items, settings) {
   if (!settings.scanImages) return items.map((i) => ({ ...i, image_base64: '' }));
-  let budget = MAX_IMAGES_PER_BATCH;
-  const out = [];
+
+  // These used to be awaited one at a time inside a for loop, which serialised
+  // the whole batch behind the slowest CDN: six images against a 5s timeout is
+  // up to 30 seconds before the batch even reaches the backend, for work that
+  // is pure network wait. They are independent, so fetch them together.
+  //
+  // The budget is now claimed up front rather than on success. If a fetch
+  // fails, that slot is not handed to a later post the way it was before -
+  // which only differs when a CDN is actively failing, and an empty
+  // image_base64 already means "score this one on text alone".
+  const claimed = [];
   for (const item of items) {
-    const url = item.images?.[0];
-    let image_base64 = '';
-    if (url && budget > 0) {
-      const encoded = await fetchAsBase64(url);
-      if (encoded) {
-        image_base64 = encoded;
-        budget -= 1;
-      }
-    }
-    out.push({ ...item, image_base64 });
+    if (claimed.length >= MAX_IMAGES_PER_BATCH) break;
+    if (item.images?.[0]) claimed.push(item);
   }
-  return out;
+
+  const encoded = new Map(
+    await Promise.all(
+      claimed.map(async (item) => [item.id, await fetchAsBase64(item.images[0])])
+    )
+  );
+
+  return items.map((item) => ({ ...item, image_base64: encoded.get(item.id) || '' }));
 }
 
 export async function classify(items, settings) {

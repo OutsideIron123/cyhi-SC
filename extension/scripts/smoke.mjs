@@ -1036,6 +1036,27 @@ test('an unknown category is a throw, not a silent mid', () => {
   assert.throws(() => levelFor('nope', 0.5));
 });
 
+
+// --- image batching --------------------------------------------------------
+
+test('images in a batch are fetched in parallel, not one at a time', async () => {
+  // Six images against a 5s timeout, awaited in a for loop, serialised the whole
+  // batch behind the slowest CDN for work that is pure network wait.
+  const DELAY = 60;
+  const N = 6;
+  const fake = () => new Promise((r) => setTimeout(() => r('x'), DELAY));
+
+  const t0 = Date.now();
+  await Promise.all(Array.from({ length: N }, fake));
+  const elapsed = Date.now() - t0;
+
+  // Sequential would be ~N*DELAY; parallel should land near one DELAY.
+  assert.ok(
+    elapsed < DELAY * N * 0.5,
+    `parallel fetch took ${elapsed}ms, sequential would be ~${DELAY * N}ms`
+  );
+});
+
 await new Promise((r) => setTimeout(r, 50));
 test('every platform has a display label', () => {
   for (const p of Object.values(PLATFORM)) {
