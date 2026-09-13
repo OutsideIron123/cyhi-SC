@@ -15,3 +15,4 @@ extension/.vite/
 # Runtime state: app.py persists the trigger vault here, per machine.
 triggers.json
 extension/dist-firefox/
+extension/web-ext-artifacts/
