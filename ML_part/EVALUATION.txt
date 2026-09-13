@@ -1,0 +1,24 @@
+=== FINAL test-set performance (held out, untouched until now) ===
+               precision    recall  f1-score   support
+
+non-clickbait       0.96      0.97      0.96      2400
+    clickbait       0.97      0.96      0.96      2400
+
+     accuracy                           0.96      4800
+    macro avg       0.96      0.96      0.96      4800
+ weighted avg       0.96      0.96      0.96      4800
+
+Confusion matrix (rows=actual, cols=predicted):
+[[2325   75]
+ [  96 2304]]
+ROC-AUC: 0.9951
+
+171 misclassified examples out of 4800. Sample:
+  actual=non-clickbait  predicted=clickbait      (p=0.67)  Accounts, People & Miscellany
+  actual=clickbait      predicted=non-clickbait  (p=0.45)  A Quick Shout-Out To Lupita Nyong'o's Umbrella Man
+  actual=non-clickbait  predicted=clickbait      (p=0.56)  Utah mine co-owner: this will be the last chance for the missing miners
+  actual=non-clickbait  predicted=clickbait      (p=0.65)  Politicians Disappear More Often Than You Think
+  actual=non-clickbait  predicted=clickbait      (p=0.57)  A Madoff Cookbook Has a Secret, Too
+  actual=clickbait      predicted=non-clickbait  (p=0.49)  18 Glorious Nail Art Designs For Fall
+  actual=clickbait      predicted=non-clickbait  (p=0.41)  David Beckham Immortalized His Daughters Drawing With A New Tattoo
+  actual=non-clickbait  predicted=clickbait      (p=0.58)  Pop starlet Kylie Minogue has early-stage breast cancer

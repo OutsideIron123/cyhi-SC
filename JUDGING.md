@@ -77,27 +77,71 @@ live logged-in feed on every platform.
 
 ---
 
-## Q4. "How accurate is it? What about false positives?"
+## Q4. "How accurate is it?" / "It's not 100% accurate"
 
-Lead with the sharpest number we have — it shows measurement, not vibes:
+**You have a real number. Lead with it.** Held-out test set, never touched until final
+evaluation — `ML_part/EVALUATION.txt`:
 
-> "Clickbait is the interesting one. A genuine technical question — *'What's everyone
-> using for CI these days?'* — scores **0.590**. Real quiz-bait — *'Which productivity
-> personality are you?'* — scores **0.598**. Eight thousandths apart.
+| | |
+|---|---|
+| **Accuracy** | **96%** (4,629 of 4,800) |
+| **ROC-AUC** | **0.9951** |
+| Precision / recall (clickbait) | 0.97 / 0.96 |
+| Confusion matrix | 75 false positives, 96 false negatives |
+
+> "96% accuracy, ROC-AUC 0.995, on a test set the model never saw during training or
+> tuning. We can show you the confusion matrix."
+
+**100% is not the bar — and a team claiming it would be telling you their test set leaked.**
+The honest framing: we know our error rate, we know which direction the errors go, and we
+made the operating point a user choice.
+
+### The errors are genuinely hard, not sloppy
+
+Read two of them out. They do the work for you:
+
+- *"Politicians Disappear More Often Than You Think"* — labelled real news, scores 0.65.
+  Reasonable people disagree.
+- *"Pop starlet Kylie Minogue has early-stage breast cancer"* — real news written in
+  tabloid register. The model is reading style, and the style genuinely is baity.
+
+That's label ambiguity at the boundary, not a broken classifier.
+
+### Precision/recall is a dial, not a fixed number
+
+Also from the test set — worth quoting, because it shows we understand the trade:
+
+| Threshold | Precision | Recall |
+|---|---|---|
+| 0.50 | 0.968 | 0.960 |
+| 0.60 | 0.983 | 0.930 |
+| 0.70 | 0.990 | 0.887 |
+| 0.90 | 0.998 | 0.670 |
+
+> "Filtering someone's feed wrongly is worse than missing one, so we run on the
+> high-precision side. That's what the Low/Mid/High control is — it moves your operating
+> point on this curve."
+
+### Now the honest part: 96% is on *headlines*
+
+> "That 96% is on news headlines, which is what the model was trained on. Our feed posts
+> are social captions — a different distribution. That's where the 0.590 vs 0.598 collision
+> comes from: on headlines a question **is** a bait marker, and on social feeds genuine
+> questions are normal.
 >
-> No threshold separates them. So we ship 0.60, the lowest bar with zero false positives,
-> which catches 7 of 12 known baits. High catches 10 of 12 and knowingly flags some real
-> questions. We made that an explicit user choice rather than pretending we solved it."
+> So we don't claim 96% in deployment. We claim 96% on the distribution we measured, and
+> we calibrated the deployed threshold separately against a hand-built social corpus."
 
-Why it happens: the model was trained on **news headlines**, where an interrogative *is* a
-bait marker. On social feeds, genuine questions are normal. That's a train/deploy
-distribution mismatch, and it's structural.
+**That distinction — in-distribution accuracy vs deployment accuracy — is the most
+sophisticated thing you can say in this conversation.** Most teams can't tell you their
+test-set number at all, let alone why it doesn't transfer.
 
-Boasting, by contrast, has a clean plateau: 0.40–0.44 gives 14/14 with zero false
-positives, so we ship 0.42, its midpoint.
+Boasting has a clean plateau by contrast: 0.40–0.44 gives 14/14 with zero false positives,
+so we ship 0.42, its midpoint.
 
-**Caveat to volunteer:** both corpora are hand-written by one person. They prove
-*separation*, not accuracy.
+**Caveat to volunteer:** the *social* corpora for boast and clickbait are hand-written by
+one person. They prove separation, not accuracy. The 96% is the rigorous number; those are
+calibration aids.
 
 ---
 
