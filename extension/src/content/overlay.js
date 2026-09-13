@@ -8,6 +8,8 @@ const LABELS = {
   [REASON.TOXICITY]: 'toxic language',
   [REASON.NSFW]: 'sensitive imagery',
   [REASON.TRIGGER]: 'a topic you muted',
+  [REASON.BOAST]: 'self-promotion',
+  [REASON.RAGEBAIT]: 'clickbait',
 };
 
 export function injectStyles() {

@@ -12,29 +12,54 @@ export function mockEvents({ count = 240, minutes = 60, seed = 7 } = {}) {
     const t = now - span + Math.floor(span * progress) + Math.floor(rand() * 4000);
     const heat = 0.25 + progress * 0.45;
     const tox = clamp01(betaish(rand, heat));
-    const nsf = clamp01(betaish(rand, 0.28));
     const sim = clamp01(betaish(rand, 0.3));
 
+    const platform = pickPlatform(rand());
+    // Instagram is an image feed, so NSFW is the reason that actually fires
+    // there; on a text feed it is mostly noise. Modelling one rate for all four
+    // platforms made the dashboard's per-platform split meaningless.
+    const nsf = clamp01(betaish(rand, platform === PLATFORM.INSTAGRAM ? 0.44 : 0.28));
+    // Boasting only ever scores on LinkedIn, so the sample data has to model it
+    // that way or the dashboard's Boasting bar sits at zero forever.
+    const bst = platform === PLATFORM.LINKEDIN ? clamp01(betaish(rand, 0.36)) : 0;
+
+    // Clickbait is cross-platform, so unlike boast it is not gated on one feed.
+    const rb = clamp01(betaish(rand, 0.34));
+
     const reasons = [];
+    if (rb >= 0.6) reasons.push(REASON.RAGEBAIT);
     if (tox > 0.7) reasons.push(REASON.TOXICITY);
     if (nsf > 0.6) reasons.push(REASON.NSFW);
     const tg = sim > 0.55 ? phrases[Math.floor(rand() * phrases.length)] : null;
     if (tg) reasons.push(REASON.TRIGGER);
+    const boasted = bst >= 0.42;
+    if (boasted) reasons.push(REASON.BOAST);
 
     out.push({
       t,
-      p: rand() > 0.45 ? PLATFORM.X : PLATFORM.REDDIT,
-      a: reasons.length ? (nsf > 0.6 ? ACTION.COLLAPSE : ACTION.BLUR) : ACTION.ALLOW,
+      p: platform,
+      a: reasons.length
+        ? nsf > 0.6
+          ? ACTION.COLLAPSE
+          : boasted && reasons.length === 1
+            ? ACTION.COLLAPSE
+            : ACTION.BLUR
+        : ACTION.ALLOW,
       r: reasons,
       tox: round2(tox),
       nsf: round2(nsf),
       tg,
       sim: round2(sim),
+      bst: round2(bst),
+      rb: round2(rb),
       rv: reasons.length > 0 && rand() > 0.82,
     });
   }
   return out.sort((a, b) => a.t - b.t);
 }
+
+const pickPlatform = (r) =>
+  r < 0.36 ? PLATFORM.X : r < 0.64 ? PLATFORM.REDDIT : r < 0.84 ? PLATFORM.LINKEDIN : PLATFORM.INSTAGRAM;
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const round2 = (n) => Math.round(n * 100) / 100;

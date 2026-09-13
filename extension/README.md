@@ -97,9 +97,9 @@ Three things about this contract are load-bearing:
 
 - **We read `score`, not `flagged`.** The backend computes `flagged` from the
   thresholds we sent, but the extension re-derives the action client-side in
-  `decide.js`. That keeps one decision point and lets a slider take effect on the
-  next scroll. It also means the NSFW slider works even though the backend's own
-  `flagged` is a label check rather than a threshold.
+  `decide.js`. That keeps one decision point and lets a level change take effect
+  on the next scroll. It also means the NSFW setting works even though the
+  backend's own `flagged` is a label check rather than a threshold.
 - **`similarities` is keyed by phrase**, not by trigger id, so `decide.js` matches
   on phrase text. Rename a trigger in the popup and it is a different trigger.
 - **`similarity_threshold` is batch-wide, but the popup has one per trigger.** We
@@ -114,6 +114,122 @@ slow part of a batch.
 
 A post the backend omits, or that comes back with `errors`, is treated as *allow*.
 A model crash must never blank the feed.
+
+## Filtering strength (Low / Mid / High)
+
+The popup exposes three named stops per category, not a raw threshold slider.
+The table lives in `src/lib/levels.js`.
+
+**More filtering means a lower threshold.** "High" catches more, so it is the
+*smallest* number in every row. Getting this backwards makes the buttons do the
+opposite of their label, so `levels.js` is covered by a test that asserts every
+row is ordered `low > mid > high`.
+
+`mid` is the calibrated default in every row - the value the category actually
+ships with in `DEFAULT_SETTINGS`, kept in sync by another test. Low and High are
+deliberate moves away from a measured point:
+
+| Category  | Low  | Mid  | High | Why Mid is there                                  |
+|-----------|------|------|------|---------------------------------------------------|
+| Toxicity  | 0.85 | 0.70 | 0.50 | toxic-bert's own default; well separated           |
+| NSFW      | 0.80 | 0.60 | 0.40 | Falconsai scores are bimodal, exact bar matters less |
+| Boasting  | 0.52 | 0.42 | 0.36 | midpoint of the measured 0.40-0.44 zero-FP plateau |
+| Clickbait | 0.70 | 0.60 | 0.52 | lowest bar with zero false positives (7/12 baits)  |
+| Triggers  | 0.45 | 0.32 | 0.24 | `defaultTriggerThreshold`                          |
+
+Clickbait **High is a knowing trade**: it catches 10/12 baits instead of 7, but
+flags ordinary technical questions. The model was trained on news headlines,
+where an interrogative is itself a bait marker, so a genuine question ("What's
+everyone using for CI these days?", 0.590) sits eight thousandths below real
+quiz-bait (0.598). There is no bar that separates them - only a choice.
+
+Nothing downstream knows levels exist. Thresholds are still stored as plain
+numbers, `decide()` and the backend payload are unchanged, and a threshold left
+behind by the old slider still loads - it renders as the nearest level, with the
+popup admitting it is rounding.
+
+## Supported platforms
+
+X, Reddit, LinkedIn and Instagram. Each is one entry in `ADAPTERS` in
+`src/content/adapters.js`: a host list, a CSS selector and an `extract(el)` that
+returns `{ id, text, images }`. Nothing outside that module is
+platform-specific, so a fifth site is one object plus a `PLATFORM` constant, a
+label, a `sites` default and the manifest match.
+
+`scan()` skips any post that has a matching ancestor. LinkedIn reshares and X
+quote-tweets both nest a post inside a post, and without that guard the inner
+one is scored separately and blurs on its own.
+
+**LinkedIn and Instagram selectors are the least stable.** The feed is heavily
+A/B tested and class names change; `.feed-shared-update-v2`,
+`.update-components-text` and the `urn:li:activity` attribute are the current
+hooks, with fallbacks. If LinkedIn silently stops blurring, check those first —
+the console line `[READIT] content script active on linkedin` tells you the
+script is injected and the problem is extraction, not plumbing.
+
+Instagram hashes every class, so its adapter matches on `main article` and
+reads everything else off attributes that survive: the `/p/<shortcode>/`
+permalink is the post id, the avatar's `alt="<user>'s profile picture"` is the
+author, and the caption is recovered from the card's own `innerText` with the
+chrome stripped. Two Instagram-specific rules are load-bearing:
+
+- **innerText is cut at "View all N comments".** Below that line is other
+  people's writing; scoring it as the poster's is how a clean post gets veiled
+  for somebody else's abusive reply.
+- **Image-only posts fall back to Instagram's generated alt text.** On a meme
+  ("May be an image of text that says '...'") that alt is the only place the
+  words in the picture exist as text. It is used only when no caption survives,
+  so it never dilutes a real one.
+
+Boasting stays scoped to LinkedIn. On an image feed it would mostly catch
+ordinary good news; toxicity and NSFW are what actually fire on Instagram, and
+NSFW is the reason it matters most there — see `instagramMedia()`, which drops
+avatars (`s150x150`) and sprites (`/rsrc.php/`) and substitutes a reel's
+`poster` for the video it cannot read.
+
+### Clickbait / rage-bait
+
+`app.py` returns a `ragebait` block on every text post: `score` (a 0.6/0.4 blend of our
+own TF-IDF + LogisticRegression clickbait model in `ML_part/` and an outrage-phrasing
+heuristic), plus `clickbait_model_score` and `heuristic_score` separately. `decide()`
+reads `ragebait.score`, and the verdict carries the model's own probability alongside
+the blend so the dashboard can show what our model contributed.
+
+**The default threshold is 0.60, not `app.py`'s `DEFAULT_RAGEBAIT_THRESHOLD` of 0.55.**
+Measured against the live backend over a 28-post corpus: at 0.55 two ordinary technical
+questions flag — "What's everyone using for CI these days?" scores 0.590. The model was
+trained on news headlines, where an interrogative *is* a bait marker, so real quiz-bait
+("Which productivity personality are you?", 0.598) sits eight thousandths above a genuine
+question. There is no wide safe plateau the way there was for boasting; 0.60 is the
+lowest bar that clears every false positive with any margin, and it catches 7 of 12
+known baits. Do not lower the default without re-running that sweep.
+
+Post ids are prefixed per platform: `x_`, `r_`, `li_`, `ig_`, or `h_` for the
+text-hash fallback where a site gives no stable id. The prefix is not cosmetic:
+two identical captions on different platforms would otherwise collide in the
+verdict cache.
+
+## Calibrating trigger sensitivity
+
+Measured against the real `all-MiniLM-L6-v2` embedder on realistic feed posts,
+not guessed:
+
+| what | cosine similarity |
+|---|---|
+| near-verbatim match ("layoffs announced" vs "layoffs and job loss") | 0.51 |
+| same topic, different words ("my team got laid off") | 0.36 |
+| typical on-topic LinkedIn post vs its trigger | 0.31 – 0.37 |
+| unrelated post vs any trigger | 0.15 – 0.26 |
+| clearly unrelated ("build working, trailing slash") | 0.02 |
+
+A short trigger phrase compared against a long post is an asymmetric comparison,
+so scores sit far lower than the 0.7+ people expect from sentence similarity.
+The default is **0.32**, and the useful range is roughly 0.25 to 0.5. Above 0.55
+nothing on a real feed will ever match.
+
+The separation between "on topic" (~0.34) and "unrelated" (~0.22) is real but
+narrow, so a trigger that is too broad will catch the whole feed. Specific
+phrases beat vague ones: "graphic animal cruelty" works, "bad things" does not.
 
 ## How this survives MV3
 

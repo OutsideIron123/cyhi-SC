@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "READIT",
-  "version": "0.1.0",
-  "description": "A wellbeing layer between you and your feed. Scores posts before they render and hands the decision back to you.",
+  "version": "0.2.0",
+  "description": "A wellbeing layer between you and your feed. Scores posts on X, Reddit, LinkedIn and Instagram before they render and hands the decision back to you.",
   "permissions": [
     "storage",
     "alarms"
@@ -20,7 +20,12 @@
     "https://i.redd.it/*",
     "https://preview.redd.it/*",
     "https://*.redd.it/*",
-    "https://*.redditmedia.com/*"
+    "https://*.redditmedia.com/*",
+    "https://media.licdn.com/*",
+    "https://*.licdn.com/*",
+    "https://*.cdninstagram.com/*",
+    "https://*.fbcdn.net/*",
+    "https://scontent.cdninstagram.com/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -38,6 +43,10 @@
         "https://www.reddit.com/*",
         "https://old.reddit.com/*",
         "https://reddit.com/*",
+        "https://linkedin.com/*",
+        "https://www.linkedin.com/*",
+        "https://www.instagram.com/*",
+        "https://instagram.com/*",
         "http://127.0.0.1/*",
         "http://localhost/*"
       ],

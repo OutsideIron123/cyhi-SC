@@ -21,14 +21,14 @@
         border: 1px solid color-mix(in srgb, canvastext 18%, transparent);
         background: canvas; color: canvastext;
       }
-      article, shreddit-post {
+      article, shreddit-post, .feed-shared-update-v2 {
         display: block; margin: 12px 0; padding: 16px;
         background: canvas; border-radius: 12px;
         border: 1px solid color-mix(in srgb, canvastext 12%, transparent);
       }
       .handle { font-weight: 650; font-size: 13px; }
       .handle span { font-weight: 400; opacity: 0.55; margin-left: 6px; }
-      [data-testid='tweetText'], [slot='text-body'] { margin-top: 6px; }
+      [data-testid='tweetText'], [slot='text-body'], .update-components-text { margin-top: 6px; }
       [slot='title'] { font-weight: 650; margin-top: 4px; display: block; }
       .tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; opacity: 0.5; }
     </style>
@@ -38,7 +38,7 @@
       <header>
         <h1>Bridge test harness</h1>
         <p class="sub">
-          Fake posts in real X / Reddit DOM shapes. This proves the extension pipeline —
+          Fake posts in real X / Reddit / LinkedIn / Instagram DOM shapes. This proves the pipeline —
           extraction → batching → backend → verdict → blur → event log — without needing
           a logged-in timeline or correct production selectors.
         </p>
@@ -46,6 +46,8 @@
           <select id="platform">
             <option value="x">X shape</option>
             <option value="reddit">Reddit shape</option>
+            <option value="linkedin">LinkedIn shape</option>
+            <option value="instagram">Instagram shape</option>
           </select>
           <button id="more">Append 8 posts (tests MutationObserver)</button>
           <button id="burst">Burst 40 (tests batching)</button>
@@ -53,7 +55,7 @@
         </div>
         <p class="sub" id="count"></p>
       </header>
-      <div id="feed"></div>
+      <main id="feed"></main>
     </div>
 
     <script>
@@ -82,7 +84,20 @@
         'another round of layoffs announced today, third one this quarter',
         'my whole team got laid off this morning, still processing it',
       ];
-      const POOL = [...TOXIC, ...CLEAN, ...CLEAN, ...SPICY, ...TRIGGERY];
+      // LinkedIn only. The last two are the hard cases: congratulating someone
+      // else scores higher against the boast phrases than several real brags,
+      // and must still come through unfiltered.
+      const BOASTY = [
+        "Thrilled to announce that I've been promoted to Senior Engineering Manager! Grateful to my incredible team.",
+        'After 200 rejections, I finally landed my dream job at Google. Never give up on yourself.',
+        "I woke up at 4am every day for a year. Here's what that taught me about winning.",
+        'Huge congrats to Priya on being promoted to Director! So happy for you.',
+        'Congratulations to my former colleague Dana on her new role — well deserved.',
+      ];
+      const POOL =
+        platform === 'linkedin'
+          ? [...TOXIC, ...CLEAN, ...BOASTY, ...SPICY, ...TRIGGERY]
+          : [...TOXIC, ...CLEAN, ...CLEAN, ...SPICY, ...TRIGGERY];
 
       const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
@@ -92,6 +107,40 @@
       function makePost() {
         const text = POOL[n % POOL.length];
         const id = ++n;
+        if (platform === 'linkedin') {
+          const el = document.createElement('div');
+          el.className = 'feed-shared-update-v2';
+          el.setAttribute('data-urn', `urn:li:activity:${'730000000000' + String(100000 + id)}`);
+          const photo = id % 4 === 0
+            ? `<div class="update-components-image"><img src="${PIXEL}" width="120" height="80" alt="" /></div>`
+            : '';
+          el.innerHTML = `
+            <div class="handle">Test Person <span>· 1st · now</span></div>
+            <div class="update-components-text">${text}</div>
+            ${photo}`;
+          return el;
+        }
+        if (platform === 'instagram') {
+          // innerText order matters here: the adapter recovers the caption from
+          // it, strips the chrome, and cuts everything below "View all N
+          // comments" so a commenter's words are never scored as the poster's.
+          const el = document.createElement('article');
+          el.setAttribute('role', 'presentation');
+          el.innerHTML = `
+            <div class="handle">
+              <img src="${PIXEL}" alt="test_user_${id}'s profile picture" width="24" height="24" />
+              test_user_${id} <span>\u00b7 Follow \u00b7 2d</span>
+            </div>
+            <img src="${PIXEL}" alt="Photo by test_user_${id} on June 08, 2024." width="160" height="120" />
+            <div>test_user_${id} ${text}</div>
+            <div>\u2026 more</div>
+            <div>Liked by someone and 1,204 others</div>
+            <a href="/test_user_${id}/p/C${1000000 + id}xYz/" class="tag">2d</a>
+            <div>View all 42 comments</div>
+            <div>hostile_commenter you are worthless and nobody would miss you</div>
+            <div>Add a comment\u2026</div>`;
+          return el;
+        }
         if (platform === 'reddit') {
           const el = document.createElement('shreddit-post');
           el.setAttribute('id', `t3_test${id}`);

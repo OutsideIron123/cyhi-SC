@@ -5,7 +5,11 @@
 
 flask==3.0.3
 flask-cors==4.0.1
+<<<<<<< HEAD
 torch>=2.2,<2.6.
+=======
+torch==2.3.1
+>>>>>>> 0e008b2ca0122602a57c6ca4d997ea45684cb433
 transformers==4.41.2
 sentence-transformers==3.0.1
 pillow==10.3.0

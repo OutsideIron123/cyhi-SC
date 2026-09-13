@@ -4,9 +4,15 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const HARNESS = join(dirname(fileURLToPath(import.meta.url)), '..', 'test-harness', 'index.html');
-const PORT = Number(process.env.PORT || 8000);
+// 8001, NOT 8000. app.py owns 8000, and on Windows both processes can bind
+// it - the one that started last answers, so a stray mock silently shadows the
+// real backend and every score on screen becomes fake. Staying off its port is
+// the only version of this that cannot happen by accident.
+const PORT = Number(process.env.PORT || 8001);
 const NASTY = ['idiot', 'stupid', 'hate', 'trash', 'kill', 'worthless', 'scum', 'shut up'];
 const SPICY = ['nsfw', 'nude', 'gore', 'blood', 'graphic'];
+const BAITY = ["won't believe", 'stop scrolling', 'nobody is talking', 'changes everything',
+  'shocking truth', 'wait until you see', 'link in bio', 'save this'];
 
 let triggerVault = [];
 
@@ -45,6 +51,7 @@ const server = createServer(async (req, res) => {
     const posts = body?.posts || [];
     const toxThreshold = num(body?.toxicity_threshold, 0.7);
     const simThreshold = num(body?.similarity_threshold, 0.45);
+    const rageThreshold = num(body?.ragebait_threshold, 0.6);
 
     await new Promise((r) => setTimeout(r, 60 + posts.length * 8));
 
@@ -76,11 +83,18 @@ const server = createServer(async (req, res) => {
         };
       }
 
+      // Crude stand-in for the trained clickbait model: app.py returns this
+      // block on every text post, so the harness has to as well or the
+      // clickbait path goes untested until it meets the real backend.
+      const rageScore = score(text, BAITY);
+      const isRagebait = rageScore >= rageThreshold;
+
       const flags = {
         toxicity: isToxic,
         semantic_trigger: matches.length > 0,
         nsfw: !!nsfw?.flagged,
       };
+      flags.ragebait = isRagebait;
       const flagged = Object.values(flags).some(Boolean);
       const reasons = [];
       if (flags.toxicity) reasons.push('toxicity:toxic');
@@ -109,6 +123,13 @@ const server = createServer(async (req, res) => {
           similarities,
         },
         nsfw,
+        ragebait: {
+          flagged: isRagebait,
+          score: rageScore,
+          threshold: rageThreshold,
+          clickbait_model_score: rageScore,
+          heuristic_score: 0,
+        },
         errors: [],
       };
     });
@@ -160,6 +181,17 @@ function readJson(req) {
   });
 }
 
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use. Refusing to start a second`);
+    console.error('server on it - a shadowed backend is worse than no backend.');
+    process.exit(1);
+  }
+  throw err;
+});
+
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`MOCK backend (no models) on http://127.0.0.1:${PORT}`);
+  console.log(`MOCK backend on http://127.0.0.1:${PORT} - NO MODELS, FAKE SCORES.`);
+  console.log('Never demo this. The real backend is `python app.py` on :8000.');
+  console.log(`Point the popup at http://127.0.0.1:${PORT} to use it.`);
 });

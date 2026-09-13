@@ -32,8 +32,15 @@ Stand-in, until then — **no models, never demo this**:
 cd extension && npm run mock-backend
 ```
 
-Serves fake `/classify`, `/update-triggers` and `/health` on `:8000`, and a DOM test harness at
-<http://127.0.0.1:8000/>.
+Serves fake `/classify`, `/update-triggers` and `/health` on **`:8001`**, and a DOM test
+harness at <http://127.0.0.1:8001/>. To use it you must point the popup's backend
+field at `http://127.0.0.1:8001` — it is deliberately not the default.
+
+> **Why :8001.** It used to serve on :8000, the same port as `app.py`. On Windows both
+> processes bind it happily and whichever started *last* answers, so a forgotten mock
+> silently shadows the real backend and every score on screen becomes fake with no
+> visible symptom. The mock now refuses to start if its port is taken, and the popup
+> shows a warning banner whenever the backend it reached reports itself as a mock.
 
 ### Terminal 2 — build the extension
 
@@ -76,12 +83,14 @@ changed `manifest.json`, remove the extension and load unpacked again.
 
 ## 3. Verify it works — 7 steps, ~5 minutes
 
-With the mock backend running, open <http://127.0.0.1:8000/>.
+Run `python app.py` first. For the DOM harness use the mock on its own port
+(<http://127.0.0.1:8001/>) and switch the popup's backend field to match — or serve
+the harness yourself and leave the popup pointed at the real `:8000`.
 
 | # | Do this | Expect |
 |---|---|---|
 | 1 | Look at the `chrome://extensions` card | No red **Errors** button; **service worker** is a blue link |
-| 2 | Open the popup, set URL to `http://127.0.0.1:8000`, click **Test** | Green dot, "Backend online · NNms" |
+| 2 | Open the popup, set URL to `http://127.0.0.1:8000`, click **Test** | Green dot, "Backend online · NNms", **no mock warning banner** |
 | 3 | Look at the harness page | Posts with "idiot"/"hate"/"trash" are blurred; clean ones are not |
 | 4 | Click **Show anyway** on a blurred post | Blur lifts and does not come back |
 | 5 | Popup → add topic `layoffs and job loss` → reload harness | Layoffs posts now blur too |
@@ -96,7 +105,18 @@ Also run, any time:
 cd extension && npm test
 ```
 
-12 tests over the policy engine and dashboard aggregation. No browser, ~2s.
+101 tests over the policy engine, the per-platform parsers and dashboard aggregation.
+No browser, no backend, ~2s.
+
+And against a running `app.py`, to prove the wire rather than the logic:
+
+```bash
+cd extension && npm run e2e
+```
+
+Runs the extension's own `classify()` and `decide()` against the live backend and prints
+the verdict for eight known posts. It **exits non-zero if a mock is answering**, so a
+green run always means real models.
 
 ---
 
@@ -117,6 +137,30 @@ ngrok http 8000                      # terminal 2
 Before submitting, if you want the permission list minimal, strip the two
 dev-only bits: the `data-cf-platform` branch in `detectPlatform()` and the
 `127.0.0.1` / `localhost` entries in `content_scripts.matches`.
+
+---
+
+## Running app.py outside Docker
+
+`requirements.txt` pins for the Dockerfile's `python:3.10-slim`. Those pins are
+correct there and should not be changed.
+
+Locally they may not install: `torch==2.3.1` publishes no wheel for Python 3.13
+or 3.14, and `numpy==1.26.4` / `scipy==1.13.1` stop at 3.12. If `py -0p` shows
+only 3.13+, use a venv with relaxed pins instead of editing requirements.txt:
+
+```bash
+py -3.13 -m venv .venv
+.venv/Scripts/python.exe -m pip install --extra-index-url https://download.pytorch.org/whl/cpu   "flask==3.0.3" "flask-cors==4.0.1" "torch>=2.6" "transformers>=4.46,<5"   "sentence-transformers>=3.2,<5" "pillow>=10.3" "scipy>=1.14" "numpy>=2.1"
+.venv/Scripts/python.exe app.py
+```
+
+`transformers` stays on 4.x deliberately — 5.x changed the `pipeline()` surface
+`app.py` uses. The alternative, if you want the exact pins, is installing Python
+3.12 from python.org and using `requirements.txt` unchanged.
+
+First run downloads ~700MB of model weights from HuggingFace, so the first
+`/classify` is slow. That is not the extension.
 
 ---
 

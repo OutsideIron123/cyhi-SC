@@ -1,4 +1,5 @@
 import { fetchAsBase64 } from './images.js';
+import { BOAST_PHRASES } from '../lib/boast.js';
 
 const REQUEST_TIMEOUT_MS = 30000;
 const HEALTH_TIMEOUT_MS = 4000;
@@ -15,6 +16,7 @@ export const status = {
   checkedAt: 0,
   latencyMs: 0,
   models: null,
+  service: null,
   triggers: null,
   error: null,
 };
@@ -69,8 +71,14 @@ async function postJson(url, body, timeoutMs) {
   }
 }
 
+// Everything the vault needs to hold: the user's own triggers plus, when the
+// boast filter is on, its seed phrases. app.py keys similarities by phrase
+// text, so a phrase that is not in the vault comes back as no key at all -
+// which is exactly how a boast filter silently does nothing.
 function enabledPhrases(settings) {
-  return settings.triggers.filter((t) => t.enabled).map((t) => t.phrase);
+  const own = settings.triggers.filter((t) => t.enabled).map((t) => t.phrase);
+  if (!settings.boast?.enabled) return [...new Set(own)];
+  return [...new Set([...own, ...BOAST_PHRASES])];
 }
 
 export function triggerKey(settings) {
@@ -95,9 +103,10 @@ export async function syncTriggers(settings, { force = false } = {}) {
 }
 
 export function similarityFloor(settings) {
-  const active = settings.triggers.filter((t) => t.enabled);
-  if (!active.length) return settings.defaultTriggerThreshold;
-  return Math.min(...active.map((t) => t.threshold));
+  const floors = settings.triggers.filter((t) => t.enabled).map((t) => t.threshold);
+  if (settings.boast?.enabled) floors.push(settings.boast.threshold);
+  if (!floors.length) return settings.defaultTriggerThreshold;
+  return Math.min(...floors);
 }
 
 async function attachImages(items, settings) {
@@ -135,6 +144,9 @@ export async function classify(items, settings) {
         })),
         toxicity_threshold: settings.toxicity.threshold,
         similarity_threshold: similarityFloor(settings),
+        // The score comes back regardless of this; sending it only keeps the
+        // backend's own `flagged` field consistent with the verdict we apply.
+        ragebait_threshold: settings.ragebait?.threshold ?? 0.6,
       },
       REQUEST_TIMEOUT_MS
     );
@@ -166,6 +178,10 @@ export async function health(backendUrl) {
     const json = await res.json().catch(() => ({}));
     recordSuccess(Math.round(performance.now() - t0));
     status.models = json.models || null;
+    // app.py identifies itself as "zenlayer-backend"; the stand-in reports
+    // "MOCK-no-models". Carrying it lets the popup say out loud when the feed
+    // is being scored by nothing, which is otherwise invisible until a demo.
+    status.service = json.service || null;
     syncedTriggerKey = null;
   } catch (err) {
     recordFailure(err);

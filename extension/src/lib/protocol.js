@@ -21,11 +21,25 @@ export const REASON = {
   TOXICITY: 'toxicity',
   NSFW: 'nsfw',
   TRIGGER: 'trigger',
+  BOAST: 'boast',
+  // Keyed to match app.py's response field name exactly. The score behind it
+  // blends our own clickbait model (ML_part/: TF-IDF + LogisticRegression over
+  // 16k labelled headlines) with an outrage-phrasing heuristic, 0.6/0.4.
+  RAGEBAIT: 'ragebait',
 };
 
 export const PLATFORM = {
   X: 'x',
   REDDIT: 'reddit',
+  LINKEDIN: 'linkedin',
+  INSTAGRAM: 'instagram',
+};
+
+export const PLATFORM_LABELS = {
+  [PLATFORM.X]: 'X',
+  [PLATFORM.REDDIT]: 'Reddit',
+  [PLATFORM.LINKEDIN]: 'LinkedIn',
+  [PLATFORM.INSTAGRAM]: 'Instagram',
 };
 
 export function allowVerdict(id, degraded = false) {
@@ -37,6 +51,9 @@ export function allowVerdict(id, degraded = false) {
     nsfw: 0,
     trigger: null,
     similarity: 0,
+    boast: 0,
+    ragebait: 0,
+    ragebaitModel: 0,
     degraded,
   };
 }
